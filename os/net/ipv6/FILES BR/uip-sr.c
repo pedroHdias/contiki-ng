@@ -416,10 +416,10 @@ uip_sr_update_node(void *graph, const uip_ipaddr_t *child, const uip_ipaddr_t *p
 void
 uip_sr_init(void)
 {
+  set_global_address();
   num_nodes = 0;
   memb_init(&nodememb);
   list_init(nodelist);
-  set_global_address();
 }
 /*---------------------------------------------------------------------------*/
 uip_sr_node_t *

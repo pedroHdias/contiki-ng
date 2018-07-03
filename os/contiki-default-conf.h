@@ -56,7 +56,7 @@
    configuration option can be tweaked to save memory. Performance can
    suffer with a too low number of queue buffers though. */
 #ifndef QUEUEBUF_CONF_NUM
-#define QUEUEBUF_CONF_NUM 8
+#define QUEUEBUF_CONF_NUM 15
 #endif /* QUEUEBUF_CONF_NUM */
 /*---------------------------------------------------------------------------*/
 /* uIPv6 configuration options.
@@ -68,14 +68,14 @@
  /* NBR_TABLE_CONF_MAX_NEIGHBORS specifies the maximum number of neighbors
     that each node will be able to handle. */
 #ifndef NBR_TABLE_CONF_MAX_NEIGHBORS
-#define NBR_TABLE_CONF_MAX_NEIGHBORS 5
+#define NBR_TABLE_CONF_MAX_NEIGHBORS 15
 #endif /* NBR_TABLE_CONF_MAX_NEIGHBORS */
 
 /* NETSTACK_MAX_ROUTE_ENTRIES specifies the maximum number of entries
    the routing module will handle. Applies to uIP routing tables if they are
    used, or to RPL non-storing mode links instead */
 #ifndef NETSTACK_MAX_ROUTE_ENTRIES
-#define NETSTACK_MAX_ROUTE_ENTRIES 5
+#define NETSTACK_MAX_ROUTE_ENTRIES 15
 #endif /* NETSTACK_MAX_ROUTE_ENTRIES */
 
 /* UIP_CONF_BUFFER_SIZE specifies how much memory should be reserved
@@ -111,7 +111,7 @@
 /* UIP_CONF_UDP_CONNS specifies the maximum number of
    simultaneous UDP connections. */
 #ifndef UIP_CONF_UDP_CONNS
-#define UIP_CONF_UDP_CONNS 8
+#define UIP_CONF_UDP_CONNS 15
 #endif /* UIP_CONF_UDP_CONNS */
 
 /* UIP_CONF_TCP specifies if TCP support should be included or

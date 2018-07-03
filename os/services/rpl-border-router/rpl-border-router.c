@@ -40,7 +40,6 @@
 #define LOG_LEVEL LOG_LEVEL_INFO
 
 uint8_t prefix_set;
-
 /*---------------------------------------------------------------------------*/
 void
 print_local_addresses(void)

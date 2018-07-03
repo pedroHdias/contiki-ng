@@ -45,21 +45,74 @@
 #include "dev/slip.h"
 #include "rpl-border-router.h"
 
+#include "net/routing/rpl-classic/rpl.h"
+#include "lib/list.h"
+#include "net/link-stats.h"
+#include "net/linkaddr.h"
+#include "net/packetbuf.h"
+#include "net/ipv6/uip-ds6.h"
+#include "net/ipv6/uip-ds6-nbr.h"
+#include "net/ipv6/uip-nd6.h"
+#include "net/routing/routing.h"
+#include "net/ipv6/uiplib.h"
+#include "net/ipv6/uip-ds6-route.h"
+#include "net/ipv6/uip-sr.h"
+
+
 /*---------------------------------------------------------------------------*/
 /* Log configuration */
 #include "sys/log.h"
 #define LOG_MODULE "BR"
 #define LOG_LEVEL LOG_LEVEL_INFO
 
+#define DEBUG DEBUG_PRINT
+#include "net/ipv6/uip-debug.h"
+
 void request_prefix(void);
 
+/*---------------------------------------------------------------------------*/
+static void
+print_neighbors(void)
+{
+	static uip_ds6_nbr_t *nbr;
+	LOG_INFO("Neighbors:\n");
+	for(nbr = nbr_table_head(ds6_neighbors); nbr != NULL;nbr = nbr_table_next(ds6_neighbors, nbr)) {
+		LOG_INFO("\n");
+    uip_debug_ipaddr_print(&nbr->ipaddr);
+		LOG_INFO("\n");
+	}
+	LOG_INFO("\n");
+}
+/*---------------------------------------------------------------------------*/
+static void
+print_routing_link(void)
+{
+    static uip_sr_node_t *link;
+    LOG_INFO("Routing Links:\n");
+    for(link = uip_sr_node_head(); link != NULL; link = uip_sr_node_next(link)) {
+      if(link->parent != NULL) {
+        LOG_INFO("\n");
+        uip_ipaddr_t child_ipaddr;
+        uip_ipaddr_t parent_ipaddr;
+        NETSTACK_ROUTING.get_sr_node_ipaddr(&child_ipaddr, link);
+        NETSTACK_ROUTING.get_sr_node_ipaddr(&parent_ipaddr, link->parent);
+		    uip_debug_ipaddr_print(&child_ipaddr);
+        LOG_INFO(" Parent -> ");
+        uip_debug_ipaddr_print(&parent_ipaddr);
+        LOG_INFO(") %us", (unsigned int)link->lifetime);
+        LOG_INFO("\n");
+      }
+    }
+    LOG_INFO("\n");
+}
 /*---------------------------------------------------------------------------*/
 PROCESS(border_router_process, "Border router process");
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(border_router_process, ev, data)
 {
   static struct etimer et;
-
+  static struct etimer et1;
+  
   PROCESS_BEGIN();
 
 /* While waiting for the prefix to be sent through the SLIP connection, the future
@@ -84,11 +137,22 @@ PROCESS_THREAD(border_router_process, ev, data)
     request_prefix();
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
     LOG_INFO("Waiting for prefix\n");
+	LOG_INFO(" ------------------------------------ \n");
   }
 
   NETSTACK_MAC.on();
-
+  LOG_INFO("Printing Local Addresses ----- \n");
   print_local_addresses();
+
+  while(1) {
+		etimer_set(&et1, 500);
+    LOG_INFO(" ------------------------------------ \n");
+    print_neighbors();
+    print_routing_link();
+    LOG_INFO("\n");
+    LOG_INFO(" ------------------------------------ \n");
+    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et1));
+	}
 
   while(1) {
     PROCESS_YIELD();

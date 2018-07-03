@@ -79,7 +79,7 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
                 void *data)
 {
   leds_off(LEDS_ALL);
-  leds_toggle(LEDS_BLUE);
+  leds_toggle(LEDS_YELLOW);
   uip_ds6_nbr_t *nbr = nbr_table_add_lladdr(ds6_neighbors, (linkaddr_t*)lladdr
                                             , reason, data);
   if(nbr) {
@@ -101,6 +101,8 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
     stimer_set(&nbr->sendns, 0);
     nbr->nscount = 0;
 #endif /* UIP_ND6_SEND_NS */
+    leds_off(LEDS_ALL);
+    leds_toggle(LEDS_BLUE);
     LOG_INFO("Adding neighbor with ip addr ");
     LOG_INFO_6ADDR(ipaddr);
     LOG_INFO_(" link addr ");

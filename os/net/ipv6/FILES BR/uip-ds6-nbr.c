@@ -167,10 +167,10 @@ uip_ds6_neighbors_init(void)
 {
   leds_init();
   leds_toggle(LEDS_BLUE);
+  set_global_address();
   link_stats_init();
   nbr_table_register(ds6_neighbors, (nbr_table_callback *)uip_ds6_nbr_rm);
   LOG_INFO("STARTING DS6 NBR\n");
-  set_global_address();
 }
 /*---------------------------------------------------------------------------*/
 uip_ds6_nbr_t *
@@ -239,6 +239,7 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
         strcpy(approved_nbr[cont_nbr], nodeid);
         //incrementa posição no array
         cont_nbr++;
+        clock_delay(400);
       }
       //se recebe flag2 nao regista (nó inválido)
       if (strcmp(message_nbr,flag2) == 0){
@@ -248,6 +249,7 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
         flag = 2;
         LOG_INFO("NODE DENIED IN REMOTE DATABASE (NBR)");
         LOG_INFO_("\n");
+        clock_delay(400);
       }
     }
   }

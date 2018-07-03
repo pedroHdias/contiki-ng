@@ -63,7 +63,7 @@ res_get_handler(coap_message_t *request, coap_message_t *response, uint8_t *buff
 {
 leds_off(LEDS_ALL);
 leds_toggle(LEDS_GREEN);
-static int temperature = 0, humidity = 0, mono = 0, diox = 0;
+int16_t temperature = 0, humidity = 0, mono = 0, diox = 0;
 
 mono = random_rand() % 15;
 diox = random_rand() % 2000;
