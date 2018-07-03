@@ -47,7 +47,7 @@
 /* Log configuration */
 #include "sys/log.h"
 #define LOG_MODULE "RPL"
-#define LOG_LEVEL LOG_LEVEL_RPL
+#define LOG_LEVEL LOG_LEVEL_INFO
 
 uip_ipaddr_t rpl_multicast_addr;
 static uint8_t rpl_leaf_only = RPL_DEFAULT_LEAF_ONLY;

@@ -51,7 +51,7 @@
 /* Log configuration */
 #include "sys/log.h"
 #define LOG_MODULE "App"
-#define LOG_LEVEL LOG_LEVEL_APP
+#define LOG_LEVEL LOG_LEVEL_INFO
 /*
  * Resources to be activated need to be imported through the extern keyword.
  * The build system automatically compiles the resources in the corresponding sub-directory.
@@ -65,6 +65,14 @@ extern coap_resource_t
   res_event,
   res_sub,
   res_b1_sep_b2;
+
+#include "dev/dht22.h"
+extern coap_resource_t res_dht22;
+
+extern coap_resource_t res_mono;
+
+extern coap_resource_t res_allsensors;
+
 #if PLATFORM_HAS_LEDS
 extern coap_resource_t res_leds, res_toggle;
 #endif
@@ -123,6 +131,12 @@ PROCESS_THREAD(er_example_server, ev, data)
   coap_activate_resource(&res_temperature, "sensors/temperature");
   SENSORS_ACTIVATE(temperature_sensor);
 #endif
+SENSORS_ACTIVATE(dht22);
+coap_activate_resource(&res_dht22, "sensors/dht22");
+  
+coap_activate_resource(&res_mono, "sensors/mono");
+
+coap_activate_resource(&res_allsensors, "sensors/allsensors");
 
   /* Define application-specific events here. */
   while(1) {

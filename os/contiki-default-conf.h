@@ -38,7 +38,7 @@
 
 /* IEEE802154_CONF_PANID defines the default PAN ID for IEEE 802.15.4 networks */
 #ifndef IEEE802154_CONF_PANID
-#define IEEE802154_CONF_PANID 0xabcd
+#define IEEE802154_CONF_PANID 0x0020
 #endif /* IEEE802154_CONF_PANID */
 
 /* IEEE802154_CONF_DEFAULT_CHANNEL defines the default channel for IEEE 802.15.4
@@ -68,14 +68,14 @@
  /* NBR_TABLE_CONF_MAX_NEIGHBORS specifies the maximum number of neighbors
     that each node will be able to handle. */
 #ifndef NBR_TABLE_CONF_MAX_NEIGHBORS
-#define NBR_TABLE_CONF_MAX_NEIGHBORS 16
+#define NBR_TABLE_CONF_MAX_NEIGHBORS 5
 #endif /* NBR_TABLE_CONF_MAX_NEIGHBORS */
 
 /* NETSTACK_MAX_ROUTE_ENTRIES specifies the maximum number of entries
    the routing module will handle. Applies to uIP routing tables if they are
    used, or to RPL non-storing mode links instead */
 #ifndef NETSTACK_MAX_ROUTE_ENTRIES
-#define NETSTACK_MAX_ROUTE_ENTRIES 16
+#define NETSTACK_MAX_ROUTE_ENTRIES 5
 #endif /* NETSTACK_MAX_ROUTE_ENTRIES */
 
 /* UIP_CONF_BUFFER_SIZE specifies how much memory should be reserved

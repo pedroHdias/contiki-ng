@@ -54,6 +54,17 @@
 #include "net/ipv6/uip-ds6-nbr.h"
 #include "net/ipv6/uip-nd6.h"
 #include "net/routing/routing.h"
+
+#include <stdbool.h>
+#include <stdio.h>
+#include <time.h>
+#include "sys/clock.h"
+#include "sys/stimer.h"
+#include "contiki.h"
+#include "random.h"
+#include "net/netstack.h"
+#include "net/ipv6/simple-udp.h"
+#include "net/ipv6/uiplib.h"
 #include "dev/leds.h"
 
 /* Log configuration */
@@ -61,16 +72,105 @@
 #define LOG_MODULE "IPv6 Nbr"
 #define LOG_LEVEL LOG_LEVEL_INFO
 
+// Configuração Sender-Listener --> Vitabox
+#define WITH_SERVER_REPLY  0
+#define UDP_CLIENT_PORT 8000
+#define UDP_SERVER_PORT 10001
+//estrutura para conexão UDP
+static struct simple_udp_connection udp_conn_nbr;
+//endereço do servidor (vitabox)
+uip_ipaddr_t server_ipaddr;
+static char *message_nbr;
+//array de nós registados na BD local do BR (variável partilhada entre ficheiros) max 10 vizinhos
+char approved_nbr[10][6];
+//contador para incrementar posição no array
+int cont_nbr=0;
+//estrutura para temporizadores/delays
+static struct stimer timer_stimer;
+
 NBR_TABLE_GLOBAL(uip_ds6_nbr_t, ds6_neighbors);
 
+/*---------------------------------------------------------------------------*/
+static void
+udp_rx_callback_nbr(struct simple_udp_connection *c,
+         const uip_ipaddr_t *sender_addr,
+         uint16_t sender_port,
+         const uip_ipaddr_t *receiver_addr,
+         uint16_t receiver_port,
+         const uint8_t *data,
+         uint16_t datalen)
+{
+  //guardar mensagem vinda da vitabox
+  message_nbr = (char *)data;
+  /* If tagging of traffic class is enabled tc will print number of
+     transmission - otherwise it will be 0 */
+  LOG_INFO("Received response '%s' from ", message_nbr);
+  LOG_INFO_6ADDR(sender_addr);
+  LOG_INFO_("\n");
+}
+/*---------------------------------------------------------------------------*/
+static void
+set_global_address(void)
+{
+  //definir endereço do servidor (vitabox)
+  uip_ip6addr(&server_ipaddr, 0xfd00, 0, 0, 0, 0, 0, 0, 1);
+  /* Initialize UDP connection */
+  simple_udp_register(&udp_conn_nbr, UDP_CLIENT_PORT, NULL, UDP_SERVER_PORT, udp_rx_callback_nbr);
+}
+/*---------------------------------------------------------------------------*/
+//método para passar endereço ipv6 para string
+void
+stringify_IPv6_nbr(const uip_ipaddr_t *addr, char *buf)
+{
+  char aux1[2] ;
+  char aux2[2] ;
+  char aux3[2] ;
+	strcpy(buf, "");
+  strcpy(aux2, "::");
+  strcpy(aux3, ":");
+  int k;
+  for (k = 0; k < 16; k++) {
+    if(k==2){
+      k= k + 6;
+      strcat(buf, aux2);
+    }else{
+      if(k%2 == 0 && k != 0){
+        strcat(buf, aux3);
+      }
+    }
+    if(k%2 == 0){
+      sprintf(aux1, "%x",addr->u8[k]);
+    }else{
+      sprintf(aux1, "%02x",addr->u8[k]);
+    }
+    strcat(buf, aux1);
+  }
+}
+/*---------------------------------------------------------------------------*/
+//método para verificar se nó já foi aprovado no registo de vizinhos
+bool is_node_approved_nbr(char *addr){
+  for (int i = 0; i < 10; i ++){
+    //LOG_INFO("COMPARING NODE IN NBR-- %s -- TO LOCAL DATABASE -- %s\n", addr, approved_nbr[i]);
+    if (strcmp(approved_nbr[i],addr) == 0){
+      //se encontrar o nodeid, retorna true
+      LOG_INFO("NODE FOUND IN LOCAL DATABASE (NBR) ---- %s\n", approved_nbr[i]);
+      return true;
+    } 
+  }
+  //se não encontrar o nodeid, retorna false
+  LOG_INFO("NODE NOT FOUND IN LOCAL DATABASE (NBR)\n");
+  return false;
+}
 /*---------------------------------------------------------------------------*/
 void
 uip_ds6_neighbors_init(void)
 {
   leds_init();
-  leds_toggle(LEDS_RED);
+  leds_toggle(LEDS_BLUE);
   link_stats_init();
   nbr_table_register(ds6_neighbors, (nbr_table_callback *)uip_ds6_nbr_rm);
+  LOG_INFO("STARTING DS6 NBR\n");
+  set_global_address();
 }
 /*---------------------------------------------------------------------------*/
 uip_ds6_nbr_t *
@@ -80,6 +180,79 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
 {
   leds_off(LEDS_ALL);
   leds_toggle(LEDS_BLUE);
+   //nó entrou no processo de adicionar vizinho
+  LOG_INFO("NODE DETECTED (NBR)");
+  LOG_INFO_("\n");
+  //variavel para verificar se o nó a ligar à rede é de confiança ou não
+  int flag = 0;
+  //string a enviar
+  char buf[23];
+  //nodeid a comparar
+  char nodeid[6];
+  //nodeip a enviar
+  char nodeip[40];
+  //guardar último grupo hexadecimal (nodeID) para verificar se o nó já está registado
+  sprintf(nodeid,"%02x%02x", ((uint8_t *)ipaddr)[14], ((uint8_t *)ipaddr)[15]);
+  sprintf(nodeip,"%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x", ((uint8_t *)ipaddr)[0], ((uint8_t *)ipaddr)[1], ((uint8_t *)ipaddr)[2], ((uint8_t *)ipaddr)[3], ((uint8_t *)ipaddr)[4], ((uint8_t *)ipaddr)[5], ((uint8_t *)ipaddr)[6], ((uint8_t *)ipaddr)[7], ((uint8_t *)ipaddr)[8], ((uint8_t *)ipaddr)[9], ((uint8_t *)ipaddr)[10], ((uint8_t *)ipaddr)[11],((uint8_t *)ipaddr)[12], ((uint8_t *)ipaddr)[13], ((uint8_t *)ipaddr)[14], ((uint8_t *)ipaddr)[15]);
+  //nó entrou no processo de adicionar vizinho
+  //LOG_INFO("LAST GROUP HEXADECIMAL - %s", nodeid);
+  LOG_INFO_("\n");
+  if ( is_node_approved_nbr(nodeid) == false){
+    if(flag == 0 ){
+      if(NETSTACK_ROUTING.node_is_reachable()) {
+        if(stimer_expired(&timer_stimer)){
+          //converter endereço ipv6 para string
+          stringify_IPv6_nbr(ipaddr, buf);
+          /* Send to DAG root */
+          LOG_INFO("Sending address %s to ", buf);
+          LOG_INFO_6ADDR(&server_ipaddr);
+          LOG_INFO_("\n");
+          /* Set the number of transmissions to use for this packet -
+          this can be used to create more reliable transmissions or
+          less reliable than the default. Works end-to-end if
+          UIP_CONF_TAG_TC_WITH_VARIABLE_RETRANSMISSIONS is set to 1.
+          */
+          uipbuf_set_attr(UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS, 2);
+          //envia endereço do nó que quer registar na DAG para a vitabox
+          simple_udp_sendto(&udp_conn_nbr, &buf, sizeof(buf)+1, &server_ipaddr);
+          stimer_set(&timer_stimer, 10);
+        }
+      } else {
+        //não chega ao nó
+        LOG_INFO("---- Not reachable yet");
+        LOG_INFO_("\n");
+      }
+      //se concatenação de strings de modo a garantir o processo de registo certo
+      char flag1[40];
+      sprintf(flag1,"flag1:%s", nodeid);
+      char flag2[40];
+      sprintf(flag2,"flag2:%s", nodeid);
+       //se recebe flag1 regista (nó válido)
+      if(strcmp(message_nbr,flag1) == 0){
+        leds_off(LEDS_ALL);
+        leds_toggle(LEDS_GREEN);
+        //atualiza flag
+        flag = 1;
+        LOG_INFO("NODE APPROVED IN REMOTE DATABASE (NBR)");
+        LOG_INFO_("\n");
+        //adiciona o nodeid ao array local, de modo a registar o nó
+        strcpy(approved_nbr[cont_nbr], nodeid);
+        //incrementa posição no array
+        cont_nbr++;
+      }
+      //se recebe flag2 nao regista (nó inválido)
+      if (strcmp(message_nbr,flag2) == 0){
+        leds_off(LEDS_ALL);
+        leds_toggle(LEDS_RED);
+        //atualiza flag
+        flag = 2;
+        LOG_INFO("NODE DENIED IN REMOTE DATABASE (NBR)");
+        LOG_INFO_("\n");
+      }
+    }
+  }
+  //Registo do novo nó fica pendente até aprovação na vitabox
+  if(is_node_approved_nbr(nodeid) == true){
   uip_ds6_nbr_t *nbr = nbr_table_add_lladdr(ds6_neighbors, (linkaddr_t*)lladdr
                                             , reason, data);
   if(nbr) {
@@ -107,7 +280,6 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
     LOG_INFO_LLADDR((linkaddr_t*)lladdr);
     LOG_INFO_(" state %u\n", state);
     NETSTACK_ROUTING.neighbor_state_changed(nbr);
-
     return nbr;
   } else {
     LOG_INFO("Add drop ip addr ");
@@ -115,6 +287,12 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
     LOG_INFO_(" link addr (%p) ", lladdr);
     LOG_INFO_LLADDR((linkaddr_t*)lladdr);
     LOG_INFO_(" state %u\n", state);
+    return NULL;
+  }
+   }else{
+    //em caso de erro, não faz nada
+    LOG_INFO(" Invalid Node");
+    LOG_INFO_("\n");
     return NULL;
   }
 }
