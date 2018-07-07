@@ -53,6 +53,12 @@
 
 #include "coap-endpoint.h"
 
+#define COAP_DTLS_PSK_DEFAULT_IDENTITY "OurIdentity"
+#define COAP_DTLS_PSK_DEFAULT_KEY      "OurSecret"
+
+//Key to connect with BSServer
+char MyBSKeyPUB[16];
+
 /**
  * The structure of a CoAP pre-shared key info.
  */
