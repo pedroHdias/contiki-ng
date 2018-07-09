@@ -60,8 +60,9 @@ server.on('request', function(req, res) {
 
 	//Validar se já pode fazer post para o BSserver (eventualmente fazer um evento para validar se já foi configurado, adicionar um bit à estrutura com o estado)
 	if(item.pointX != '' && item.pointY != ''){
-        var BSServerSharedkey = SetSharedKey(item);
-        var LeshanSharedkey = Math.random().toString(36).substring(2);
+        console.log('Configura	');
+        var BSServerSharedkey = SetSharedKey(item).toUpperCase();;
+        var LeshanSharedkey = makeid();
 
         httpHandler.ConfigureBSServer(ep,BSServerSharedkey,LeshanSharedkey);
         httpHandler.ConfigureLeshanServer(ep,LeshanSharedkey);
@@ -75,6 +76,20 @@ server.on('request', function(req, res) {
 server.listen(5686,'fd00::1', function() {
  	console.log('server started');
 })
+
+
+
+function makeid() {
+    //tem de ser com este random, o outro rebenta! não sei se é porcausa das letras pequenas ou QQMLD!
+    var text = "";
+    var possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  
+    for (var i = 0; i < 11; i++)
+      text += possible.charAt(Math.floor(Math.random() * possible.length));
+    // Math.random().toString(21).substring(2).toUpperCase();;
+    return text;
+  }
+
 
 
 function SetSharedKey(item){
@@ -107,7 +122,7 @@ function SetSharedKey(item){
 	
 	//console.log('sharedBig: ' + shared1);
 	
-	shared1 = pad(  shared1.toString(16), 24, '0')
+	shared1 = pad(  shared1.toString(16), 48, '0')
 	
   var res = shared1.toString(16).match(/.{2}/g);
   var final = ""

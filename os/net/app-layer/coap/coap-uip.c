@@ -571,6 +571,9 @@ get_psk_info(struct dtls_context_t *ctx,
       return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
     }
     memcpy(result, ks.identity, ks.identity_len);
+    LOG_DBG("identCharBS : %s\n", result);
+    LOG_DBG("identBS : %s\n", ks.identity);
+
     LOG_DBG("psk_identity with %u bytes found\n", ks.identity_len);
     return ks.identity_len;
 
@@ -613,6 +616,10 @@ get_psk_info(struct dtls_context_t *ctx,
       return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
     }
     memcpy(result, ks.key, ks.key_len);
+
+    LOG_DBG("pkCharBS : %s\n", ks.key);
+    LOG_DBG("pkBS : %s\n", result);
+
     LOG_DBG("psk with %u bytes found\n", ks.key_len);
     return ks.key_len;
 
