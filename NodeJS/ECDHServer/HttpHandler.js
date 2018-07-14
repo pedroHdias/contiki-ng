@@ -50,7 +50,7 @@ module.exports = {
 						"uri": "coaps://[fd00::1]:5684",
 						"bootstrapServer": "False",
 						"securityMode": "PSK",
-						"publicKeyOrId": [79, 117, 114, 73, 100, 101, 110, 116, 105, 116, 121],//#represenation of "OurIdentity"
+						"publicKeyOrId": LeshanKeyBin, // [79, 117, 114, 73, 100, 101, 110, 116, 105, 116, 121],//#represenation of "OurIdentity"
 						"serverPublicKey": [],
 						"secretKey": LeshanKeyBin, // [112, 114, 105, 118, 97, 116, 101, 95, 107, 101, 121], //#binary representation of "private_key", the hexa value is 707269766174655f6b6579
 						"smsSecurityMode": "NO_SEC",
@@ -119,7 +119,7 @@ module.exports = {
 		//var LeshanKeyBin 
 
 		//Request 
-		requestData = { "endpoint": "" + ep, "psk": { "identity": "OurIdentity", "key": "" + Keyhex } }
+		requestData = { "endpoint": "" + ep, "psk": { "identity": "" + LeshanKey, "key": "" + Keyhex } }
 
 		//Define options
 		options = {

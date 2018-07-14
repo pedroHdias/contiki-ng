@@ -1239,7 +1239,7 @@ periodic_process(coap_timer_t *timer)
         coap_init_message(request, COAP_TYPE_CON, COAP_POST, 0);
         coap_set_header_uri_path(request, "/bs");
 
-        snprintf(query_data, sizeof(query_data) - 1, "?ep=%s", session_info.ep);
+        snprintf(query_data, sizeof(query_data) - 1, "?ep=%s&sec=123", session_info.ep);
         coap_set_header_uri_query(request, query_data);
         LOG_INFO("Registering ID with bootstrap server [");
         LOG_INFO_COAP_EP(&session_info.bs_server_ep);
