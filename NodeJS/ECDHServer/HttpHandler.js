@@ -146,14 +146,51 @@ module.exports = {
 		// write data to request body
 		req.write(JSON.stringify(requestData));
 		req.end();
+	},
+	DeleteConfigurationBSServer : function (ep, BSKey, LeshanKey){
+		var requestData1 = {};
+
+		//Define options
+		var options1 = {
+			hostname: 'localhost',
+			port: 8090,
+			path: '/api/bootstrap/' + ep,
+			method: 'DELETE',
+			headers: {
+				'Content-Type': 'application/json',
+				'Accept': 'text/plain',
+			}
+		};
+
+		var req = http.request(options1, function (res) {
+			console.log('Status: ' + res.statusCode);
+			console.log('Headers: ' + JSON.stringify(res.headers));
+
+			module.exports.ConfigureBSServer(ep, BSKey, LeshanKey);
+			
+			res.setEncoding('utf8');
+			res.on('data', function (body) {
+				console.log('Body: ' + body);
+			});
+		});
+		req.on('error', function (e) {
+			console.log('problem with request: ' + e.message);
+		});
+		// write data to request body
+		req.write(JSON.stringify(requestData1));
+		req.end();
+
 	}
 }
 
-//var httpHandler = require("./HttpHandler");
+
+var httpHandler = require("./HttpHandler");
 
 //httpHandler.ConfigureBSServer("ep","85133eed617242a7","f4v2dzwyw58b6t4ah0lhumcxr" );
 
 //httpHandler.ConfigureLeshanServer("ep","f4v2dzwyw58b6t4ah0lhumcxr");
+
+httpHandler.DeleteConfigurationBSServer("Contiki-NG-Zolertia4B0014D52BE5","85133eed617242a7","f4v2dzwyw58b6t4ah0lhumcxr");
 
 
 
