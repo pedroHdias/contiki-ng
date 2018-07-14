@@ -293,6 +293,15 @@ GetKeyuint8(char *key, uint8_t *Bskey)
 // }
 //Helpers END
 
+static void
+ecc_set_random(uint32_t *secret)
+{
+  int i;
+  for(i = 0; i < 8; ++i) {
+    secret[i] = (uint32_t)random_rand() | (uint32_t)random_rand() << 16;
+  }
+}
+
 //Process to calculate ECDH
 PROCESS(genSharedKey_ecdh, "Generate ECDH");
 PROCESS_THREAD(genSharedKey_ecdh, ev, data)
@@ -309,13 +318,13 @@ PROCESS_THREAD(genSharedKey_ecdh, ev, data)
   };
 
   memcpy(state.b, nist_p_192.n, sizeof(uint32_t) * 6);
-  //static uint32_t secret_a[6];
+  static uint32_t secret_a[6];
     // memcpy(secret_a, MYPrivateKey, sizeof(uint32_t) * 6);
 
   //FORCAR CAHVE igual para testes depois tem de ser random
-  static uint32_t secret_a[6] = { 0x62EDF96D, 0x269509CD, 0xF3CE3AEF, 0x23CF0515, 0x120147FD, 0x9DA32D80 };
+  //static uint32_t secret_a[6] = { 0x62EDF96D, 0x269509CD, 0xF3CE3AEF, 0x23CF0515, 0x120147FD, 0x9DA32D80 };
   do {
-    //ecc_set_random(secret_a);
+    ecc_set_random(secret_a);
     
     memcpy(state.a, secret_a, sizeof(uint32_t) * 6);
     PT_SPAWN(&(genSharedKey_ecdh.pt), &(state.pt), ecc_compare(&state));
