@@ -31,32 +31,37 @@ var OwnY = OwnKeyPair.getPublic().getY().toString(16).toUpperCase();
 
 
 server.on('request', function(req, res) {
-	let response = req._packet.payload.toString('utf8');
-	
+    console.log("on request");
+    
+    let response = req._packet.payload.toString('utf8');
 	console.log(req.url);
 	
-	var arrURL = req.url.split('?')
+	let arrURL = req.url.split('?')
 	
-	var path = arrURL[0];
-	var ep = arrURL[1].split('=')[1];
+	let path = arrURL[0];
+	let ep = arrURL[1].split('=')[1];
 	//Devia validar se o array tem posição 0
-	
+
 	//valida se existe no hash
-	var hasItem = hash.hasItem(ep);
+	let hasItem = hash.hasItem(ep);
 	if(!hasItem){
 		hash.setItem(ep,{pointX: '' , pointY:''})
 	}
 	//Vai buscar Item para actualizar
-	var item = hash.getItem(ep);
+	let item = hash.getItem(ep);
 
 	if(path == '/ecdh/puby'){
 		item.pointY=response.split(';')[0];
-  	res.end('Ypoint='+OwnY+'\n')
-  	console.log(item.pointY);
+        res.end('Ypoint='+OwnY+'\n');
+        res.reset();
 	}else if(path == '/ecdh/pubx'){ 
 		item.pointX=response.split(';')[0];
-  	res.end('Xpoint='+OwnX+'\n')
+        res.end('Xpoint='+OwnX+'\n');
+        res.reset();
 	}else{
+        res.end('\n');
+        res.reset();
+        console.log("Erro;");
 		//mandar erro!!!
 	}
 	
@@ -66,13 +71,16 @@ server.on('request', function(req, res) {
 	//Validar se já pode fazer post para o BSserver (eventualmente fazer um evento para validar se já foi configurado, adicionar um bit à estrutura com o estado)
 	if(item.pointX != '' && item.pointY != ''){
         console.log('Configura	');
-        var BSServerSharedkey = SetSharedKey(item).toUpperCase();;
-        var LeshanSharedkey = makeid();
+        let BSServerSharedkey = SetSharedKey(item).toUpperCase();;
+        let LeshanSharedkey = makeid();
 
-        httpHandler.ConfigureBSServer(ep,BSServerSharedkey,LeshanSharedkey);
-        httpHandler.ConfigureLeshanServer(ep,LeshanSharedkey);
+        //httpHandler.ConfigureBSServer(ep,BSServerSharedkey,LeshanSharedkey);
+        //httpHandler.ConfigureLeshanServer(ep,LeshanSharedkey);
+        httpHandler.DeleteConfigurationBSServer(ep,BSServerSharedkey,LeshanSharedkey);
+        httpHandler.DeleteConfigurationLeshanServer(ep,LeshanSharedkey);
+        //remove do hash (devia ficar no callback)
+        hash.removeItem(ep);
 	}
-	
 	
 	console.log('Recebeu	');
 })
@@ -115,10 +123,10 @@ function SetSharedKey(item){
 
 	var shared1 = OwnKeyPair.derive(key2.getPublic());
 
-  console.log(OwnKeyPair);
-  console.log(key2);
-	console.log(key2.getPublic().getX());
-	console.log(key2.getPublic().getY());
+    // console.log(OwnKeyPair);
+    // console.log(key2);
+	// console.log(key2.getPublic().getX());
+	// console.log(key2.getPublic().getY());
   //gera chave partilhada
   var shared1 = OwnKeyPair.derive(key2.getPublic());
   console.log("Partilhada "+ shared1.toString(16));

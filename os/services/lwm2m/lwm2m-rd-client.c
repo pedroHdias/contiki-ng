@@ -842,7 +842,7 @@ ParseStringToUInt32X(char *point)
 
   LOG_DBG("ECDH ParseStringToUInt32 %s \n", point);
 	int j,k;
-	char aux[9] ;
+	char aux[50] ;
 	k=5;
 	for(j=0;j<48;j+=8){
 		strncpy(aux, &point[j] , 8);
@@ -864,7 +864,7 @@ ParseStringToUInt32Y(char *point)
 
   LOG_DBG("ECDH ParseStringToUInt32 %s \n", point);
 	int j,k;
-	char aux[9] ;
+	char aux[50] ;
 	k=5;
 	for(j=0;j<48;j+=8){
 
