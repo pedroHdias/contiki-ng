@@ -82,95 +82,29 @@ static struct simple_udp_connection udp_conn_nbr;
 uip_ipaddr_t server_ipaddr;
 static char *message_nbr;
 //array de nós registados na BD local do BR (variável partilhada entre ficheiros) max 10 vizinhos
-char approved_nbr[10][6];
+char removed_motes_nbr[6][40];
 //contador para incrementar posição no array
 int cont_nbr=0;
-//estrutura para temporizadores/delays
-static struct stimer timer_stimer;
+//moteIP a comparar ao adicionar vizinho
+char nodeip[40];
 
 NBR_TABLE_GLOBAL(uip_ds6_nbr_t, ds6_neighbors);
 
 /*---------------------------------------------------------------------------*/
-static void
-udp_rx_callback_nbr(struct simple_udp_connection *c,
-         const uip_ipaddr_t *sender_addr,
-         uint16_t sender_port,
-         const uip_ipaddr_t *receiver_addr,
-         uint16_t receiver_port,
-         const uint8_t *data,
-         uint16_t datalen)
-{
-  //guardar mensagem vinda da vitabox
-  message_nbr = (char *)data;
-  /* If tagging of traffic class is enabled tc will print number of
-     transmission - otherwise it will be 0 */
-  LOG_INFO("Received response '%s' from ", message_nbr);
-  LOG_INFO_6ADDR(sender_addr);
-  LOG_INFO_("\n");
-}
-/*---------------------------------------------------------------------------*/
-static void
-set_global_address(void)
-{
-  //definir endereço do servidor (vitabox)
-  uip_ip6addr(&server_ipaddr, 0xfd00, 0, 0, 0, 0, 0, 0, 1);
-  /* Initialize UDP connection */
-  simple_udp_register(&udp_conn_nbr, UDP_CLIENT_PORT, NULL, UDP_SERVER_PORT, udp_rx_callback_nbr);
-}
-/*---------------------------------------------------------------------------*/
-//método para passar endereço ipv6 para string
-void
-stringify_IPv6_nbr(const uip_ipaddr_t *addr, char *buf)
-{
-  char aux1[2] ;
-  char aux2[2] ;
-  char aux3[2] ;
-	strcpy(buf, "");
-  strcpy(aux2, "::");
-  strcpy(aux3, ":");
-  int k;
-  for (k = 0; k < 16; k++) {
-    if(k==2){
-      k= k + 6;
-      strcat(buf, aux2);
-    }else{
-      if(k%2 == 0 && k != 0){
-        strcat(buf, aux3);
-      }
-    }
-    if(k%2 == 0){
-      sprintf(aux1, "%x",addr->u8[k]);
-    }else{
-      sprintf(aux1, "%02x",addr->u8[k]);
-    }
-    strcat(buf, aux1);
-  }
-}
-/*---------------------------------------------------------------------------*/
 //método para verificar se nó já foi aprovado no registo de vizinhos
-bool is_node_approved_nbr(char *addr){
-  for (int i = 0; i < 10; i ++){
-    //LOG_INFO("COMPARING NODE IN NBR-- %s -- TO LOCAL DATABASE -- %s\n", addr, approved_nbr[i]);
-    if (strcmp(approved_nbr[i],addr) == 0){
+bool is_node_removed_motes_nbr(char *addr){
+  for (int i = 0; i < 6; i ++){
+    clock_delay(400);
+    LOG_INFO("COMPARING NODE IN NBR-- %s -- TO LOCAL DATABASE -- %s\n", addr, removed_motes_nbr[i]);
+    if (strcmp(removed_motes_nbr[i],addr) == 0){
       //se encontrar o nodeid, retorna true
-      LOG_INFO("NODE FOUND IN LOCAL DATABASE (NBR) ---- %s\n", approved_nbr[i]);
+      LOG_INFO("NODE FOUND IN LOCAL DATABASE (NBR) ---- %s\n", removed_motes_nbr[i]);
       return true;
     } 
   }
   //se não encontrar o nodeid, retorna false
   LOG_INFO("NODE NOT FOUND IN LOCAL DATABASE (NBR)\n");
   return false;
-}
-/*---------------------------------------------------------------------------*/
-void
-uip_ds6_neighbors_init(void)
-{
-  leds_init();
-  leds_toggle(LEDS_BLUE);
-  set_global_address();
-  link_stats_init();
-  nbr_table_register(ds6_neighbors, (nbr_table_callback *)uip_ds6_nbr_rm);
-  LOG_INFO("STARTING DS6 NBR\n");
 }
 /*---------------------------------------------------------------------------*/
 uip_ds6_nbr_t *
@@ -183,78 +117,20 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
    //nó entrou no processo de adicionar vizinho
   LOG_INFO("NODE DETECTED (NBR)");
   LOG_INFO_("\n");
-  //variavel para verificar se o nó a ligar à rede é de confiança ou não
-  int flag = 0;
-  //string a enviar
-  char buf[23];
-  //nodeid a comparar
-  char nodeid[6];
-  //nodeip a enviar
-  char nodeip[40];
   //guardar último grupo hexadecimal (nodeID) para verificar se o nó já está registado
-  sprintf(nodeid,"%02x%02x", ((uint8_t *)ipaddr)[14], ((uint8_t *)ipaddr)[15]);
-  sprintf(nodeip,"%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x", ((uint8_t *)ipaddr)[0], ((uint8_t *)ipaddr)[1], ((uint8_t *)ipaddr)[2], ((uint8_t *)ipaddr)[3], ((uint8_t *)ipaddr)[4], ((uint8_t *)ipaddr)[5], ((uint8_t *)ipaddr)[6], ((uint8_t *)ipaddr)[7], ((uint8_t *)ipaddr)[8], ((uint8_t *)ipaddr)[9], ((uint8_t *)ipaddr)[10], ((uint8_t *)ipaddr)[11],((uint8_t *)ipaddr)[12], ((uint8_t *)ipaddr)[13], ((uint8_t *)ipaddr)[14], ((uint8_t *)ipaddr)[15]);
+  sprintf(nodeip,"%02x%02x::%02x%02x:%02x%02x:%02x%02x:%02x%02x", ((uint8_t *)ipaddr)[0], ((uint8_t *)ipaddr)[1], ((uint8_t *)ipaddr)[8], ((uint8_t *)ipaddr)[9], ((uint8_t *)ipaddr)[10], ((uint8_t *)ipaddr)[11],((uint8_t *)ipaddr)[12], ((uint8_t *)ipaddr)[13], ((uint8_t *)ipaddr)[14], ((uint8_t *)ipaddr)[15]);
   //nó entrou no processo de adicionar vizinho
-  //LOG_INFO("LAST GROUP HEXADECIMAL - %s", nodeid);
   LOG_INFO_("\n");
-  if ( is_node_approved_nbr(nodeid) == false){
-    if(flag == 0 ){
-      if(NETSTACK_ROUTING.node_is_reachable()) {
-        if(stimer_expired(&timer_stimer)){
-          //converter endereço ipv6 para string
-          stringify_IPv6_nbr(ipaddr, buf);
-          /* Send to DAG root */
-          LOG_INFO("Sending address %s to ", buf);
-          LOG_INFO_6ADDR(&server_ipaddr);
-          LOG_INFO_("\n");
-          /* Set the number of transmissions to use for this packet -
-          this can be used to create more reliable transmissions or
-          less reliable than the default. Works end-to-end if
-          UIP_CONF_TAG_TC_WITH_VARIABLE_RETRANSMISSIONS is set to 1.
-          */
-          uipbuf_set_attr(UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS, 2);
-          //envia endereço do nó que quer registar na DAG para a vitabox
-          simple_udp_sendto(&udp_conn_nbr, &buf, sizeof(buf)+1, &server_ipaddr);
-          stimer_set(&timer_stimer, 10);
-        }
-      } else {
-        //não chega ao nó
-        LOG_INFO("---- Not reachable yet");
-        LOG_INFO_("\n");
-      }
-      //se concatenação de strings de modo a garantir o processo de registo certo
-      char flag1[40];
-      sprintf(flag1,"flag1:%s", nodeid);
-      char flag2[40];
-      sprintf(flag2,"flag2:%s", nodeid);
-       //se recebe flag1 regista (nó válido)
-      if(strcmp(message_nbr,flag1) == 0){
-        leds_off(LEDS_ALL);
-        leds_toggle(LEDS_GREEN);
-        //atualiza flag
-        flag = 1;
-        LOG_INFO("NODE APPROVED IN REMOTE DATABASE (NBR)");
-        LOG_INFO_("\n");
-        //adiciona o nodeid ao array local, de modo a registar o nó
-        strcpy(approved_nbr[cont_nbr], nodeid);
-        //incrementa posição no array
-        cont_nbr++;
-        clock_delay(400);
-      }
-      //se recebe flag2 nao regista (nó inválido)
-      if (strcmp(message_nbr,flag2) == 0){
-        leds_off(LEDS_ALL);
-        leds_toggle(LEDS_RED);
-        //atualiza flag
-        flag = 2;
-        LOG_INFO("NODE DENIED IN REMOTE DATABASE (NBR)");
-        LOG_INFO_("\n");
-        clock_delay(400);
-      }
-    }
+  if ( is_node_removed_motes_nbr(nodeip) == true){
+    //em caso de erro, não faz nada
+    LOG_INFO(" Invalid Mote");
+    LOG_INFO_("\n");
+    return NULL;
   }
   //Registo do novo nó fica pendente até aprovação na vitabox
-  if(is_node_approved_nbr(nodeid) == true){
+  if(is_node_removed_motes_nbr(nodeip) == false){
+    LOG_INFO("Valid Mote");
+    LOG_INFO_("\n");
   uip_ds6_nbr_t *nbr = nbr_table_add_lladdr(ds6_neighbors, (linkaddr_t*)lladdr
                                             , reason, data);
   if(nbr) {
@@ -576,4 +452,156 @@ uip_ds6_get_least_lifetime_neighbor(void)
 }
 #endif /* UIP_ND6_SEND_NS */
 /*---------------------------------------------------------------------------*/
-/** @} */
+/*---------------------------------------------------------------------------*/
+int
+ipaddrconv_nbr(const char *addrstr, uip_ip6addr_t *ipaddr)
+{
+  uint16_t value;
+  int tmp, zero;
+  unsigned int len;
+  char c = 0;  //gcc warning if not initialized
+
+  value = 0;
+  zero = -1;
+  if(*addrstr == '[') addrstr++;
+
+  for(len = 0; len < sizeof(uip_ip6addr_t) - 1; addrstr++) {
+    c = *addrstr;
+    if(c == ':' || c == '\0' || c == ']' || c == '/') {
+      ipaddr->u8[len] = (value >> 8) & 0xff;
+      ipaddr->u8[len + 1] = value & 0xff;
+      len += 2;
+      value = 0;
+
+      if(c == '\0' || c == ']' || c == '/') {
+        break;
+      }
+
+      if(*(addrstr + 1) == ':') {
+        /* Zero compression */
+        if(zero < 0) {
+          zero = len;
+        }
+        addrstr++;
+      }
+    } else {
+      if(c >= '0' && c <= '9') {
+        tmp = c - '0';
+      } else if(c >= 'a' && c <= 'f') {
+        tmp = c - 'a' + 10;
+      } else if(c >= 'A' && c <= 'F') {
+        tmp = c - 'A' + 10;
+      } else {
+        LOG_ERR("illegal char: '%c'\n", c);
+        return 0;
+      }
+      value = (value << 4) + (tmp & 0xf);
+    }
+  }
+  if(c != '\0' && c != ']' && c != '/') {
+    LOG_ERR("too large address\n");
+    return 0;
+  }
+  if(len < sizeof(uip_ip6addr_t)) {
+    if(zero < 0) {
+      LOG_ERR("too short address\n");
+      return 0;
+    }
+    memmove(&ipaddr->u8[zero + sizeof(uip_ip6addr_t) - len],
+            &ipaddr->u8[zero], len - zero);
+    memset(&ipaddr->u8[zero], 0, sizeof(uip_ip6addr_t) - len);
+  }
+
+  return 1;
+}
+/*---------------------------------------------------------------------------*/
+static void
+udp_rx_callback_nbr(struct simple_udp_connection *c,
+         const uip_ipaddr_t *sender_addr,
+         uint16_t sender_port,
+         const uip_ipaddr_t *receiver_addr,
+         uint16_t receiver_port,
+         const uint8_t *data,
+         uint16_t datalen)
+{
+  //guardar mensagem vinda da vitabox
+  message_nbr = (char *)data;
+  LOG_INFO("Received response '%s' from ", message_nbr);
+  LOG_INFO_6ADDR(sender_addr);
+  LOG_INFO_("\n");
+  char moteAddr[30];
+  int cont = 0;
+  while ( cont < strlen(message_nbr)) {
+    moteAddr[cont] = message_nbr[7+cont-1];
+    cont++;
+  }
+  moteAddr[cont] = '\0';
+  moteAddr[0] = 'F';
+  moteAddr[1] = 'E';
+  moteAddr[2] = '8';
+  moteAddr[3] = '0';
+  //se concatenação de strings de modo a garantir o processo de registo certo
+  char flag1[40];
+  sprintf(flag1,"remove:%s", moteAddr);
+  char flag2[40];
+  sprintf(flag2,"add:%s", moteAddr);
+  const uip_ipaddr_t *moteIP;
+  //se recebe flag1 remove mote da lista de vizinhos e rotas e adiciona à blacklist
+  if(strcmp(message_nbr,flag1) == 0){
+    leds_off(LEDS_ALL);
+    leds_toggle(LEDS_RED);
+    ipaddrconv_nbr(moteAddr, (uip_ip6addr_t *)&moteIP);
+    uip_ds6_nbr_t *nbr;
+    nbr = uip_ds6_nbr_lookup(moteIP);
+    uip_ds6_nbr_rm(nbr);
+    LOG_INFO("MOTE REMOVED IN NEIGHBOUR TABLE (NBR)");
+    LOG_INFO_("\n");
+    //adiciona o nodeid ao array local, de modo a bloquear o nó
+    for (int i = 0; i < 6; i ++){
+      //LOG_INFO("COMPARING NODE IN NBR-- %s -- TO LOCAL DATABASE -- %s\n", addr, removed_motes_nbr[i]);
+      if (strcmp(removed_motes_nbr[i],NULL) == 0){
+        //se encontrar um campo vazio, adiciona à lista
+        strcpy(removed_motes_nbr[i], moteAddr);
+        LOG_INFO("MOTE ADDED IN LOCAL DATABASE (NBR) ---- %s\n", removed_motes_nbr[i]);
+      } 
+    }
+    clock_delay(400);
+  }
+  //se recebe flag2 remove mote da blacklist
+  if (strcmp(message_nbr,flag2) == 0){
+    leds_off(LEDS_ALL);
+    leds_toggle(LEDS_GREEN);
+    for (int i = 0; i < 6; i ++){
+      //LOG_INFO("COMPARING NODE IN NBR-- %s -- TO LOCAL DATABASE -- %s\n", addr, removed_motes_nbr[i]);
+      if (strcmp(removed_motes_nbr[i], moteAddr) == 0){
+         strcpy(removed_motes_nbr[i], NULL);
+        //se encontrar o nodeid, remove da lista
+        LOG_INFO("MOTE REMOVED IN LOCAL DATABASE (NBR) ---- %s\n", removed_motes_nbr[i]);
+      } 
+    }
+    LOG_INFO("MOTE APPROVED IN SERVER MANAGER (NBR)");
+    LOG_INFO_("\n");
+    clock_delay(400);
+  }
+}
+/*---------------------------------------------------------------------------*/
+static void
+set_global_address(void)
+{
+  //definir endereço do servidor (vitabox)
+  uip_ip6addr(&server_ipaddr, 0xfd00, 0, 0, 0, 0, 0, 0, 1);
+  /* Initialize UDP connection */
+  simple_udp_register(&udp_conn_nbr, UDP_CLIENT_PORT, NULL, UDP_SERVER_PORT, udp_rx_callback_nbr);
+}
+
+/*---------------------------------------------------------------------------*/
+void
+uip_ds6_neighbors_init(void)
+{
+  leds_init();
+  leds_toggle(LEDS_BLUE);
+  set_global_address();
+  link_stats_init();
+  nbr_table_register(ds6_neighbors, (nbr_table_callback *)uip_ds6_nbr_rm);
+  LOG_INFO("STARTING DS6 NBR\n");
+}

@@ -60,6 +60,7 @@
 #include "net/netstack.h"
 #include "net/ipv6/simple-udp.h"
 #include "net/ipv6/uiplib.h"
+#include "net/ipv6/uip-debug.h"
 
 /* Log configuration */
 #include "sys/log.h"
@@ -77,85 +78,27 @@ static int num_nodes;
 static struct simple_udp_connection udp_conn;
 //endereço do servidor (vitabox)
 uip_ipaddr_t server_ipaddr;
-static char *message;
+static char *message_sr;
 //array de nós registados na BD local do BR (variável partilhada entre ficheiros) max 10 vizinhos
-char approved_nbr[10][6];
-//contador para incrementar posição no array
-int cont=0;
-//estrutura para temporizadores/delays
-static struct stimer timer_stimer;
+char removed_motes_sr[6][40];
 
 /* Every known node in the network */
 LIST(nodelist);
 MEMB(nodememb, uip_sr_node_t, UIP_SR_LINK_NUM);
-/*---------------------------------------------------------------------------*/
-static void
-udp_rx_callback(struct simple_udp_connection *c,
-         const uip_ipaddr_t *sender_addr,
-         uint16_t sender_port,
-         const uip_ipaddr_t *receiver_addr,
-         uint16_t receiver_port,
-         const uint8_t *data,
-         uint16_t datalen)
-{
-  //guardar mensagem vinda da vitabox
-  message = (char *)data;
-  /* If tagging of traffic class is enabled tc will print number of
-     transmission - otherwise it will be 0 */
-  LOG_INFO("Received response '%s' from ", message);
-  LOG_INFO_6ADDR(sender_addr);
-  LOG_INFO_("\n");
-}
-/*---------------------------------------------------------------------------*/
-static void
-set_global_address(void)
-{
-  /* Initialize UDP connection */
-  simple_udp_register(&udp_conn, UDP_CLIENT_PORT, NULL, UDP_SERVER_PORT, udp_rx_callback);
-  //definir endereço do servidor (vitabox)
-  uip_ip6addr(&server_ipaddr, 0xfd00, 0, 0, 0, 0, 0, 0, 1);
-}
-/*---------------------------------------------------------------------------*/
-//método para passar endereço ipv6 para string
-void
-stringify_IPv6(const uip_ipaddr_t *addr, char *buf)
-{
-  char aux1[2] ;
-  char aux2[2] ;
-  char aux3[2] ;
-	strcpy(buf, "");
-  strcpy(aux2, "::");
-  strcpy(aux3, ":");
-  int k;
-  for (k = 0; k < 16; k++) {
-    if(k==2){
-      k= k + 6;
-      strcat(buf, aux2);
-    }else{
-      if(k%2 == 0 && k != 0){
-        strcat(buf, aux3);
-      }
-    }
-    if(k%2 == 0){
-      sprintf(aux1, "%x",addr->u8[k]);
-    }else{
-      sprintf(aux1, "%02x",addr->u8[k]);
-    }
-    strcat(buf, aux1);
-  }
-}
+
 /*---------------------------------------------------------------------------*/
 //método para verificar se nó já foi aprovado no registo de vizinhos
-bool is_node_approved_sr(char *addr){
-  for (int i = 0; i < 10; i ++){
-    //LOG_INFO("COMPARING NODE IN SR -- %s -- TO LOCAL DATABASE -- %s\n", addr, approved_nbr[i]);
-    if (strcmp(approved_nbr[i],addr) == 0){
-      //se encontrar o nodeid, retorna true
-      LOG_INFO("NODE FOUND IN LOCAL DATABASE (SRC) ---- %s\n", approved_nbr[i]);
+bool is_node_removed_motes_sr(char *addr){
+  for (int i = 0; i < 6; i ++){
+    clock_delay(400);
+    LOG_INFO("COMPARING NODE IN SR -- %s -- TO LOCAL DATABASE -- %s\n", addr, removed_motes_sr[i]);
+    if (strcmp(removed_motes_sr[i],addr) == 0){
+      //se encontrar o nodeip, retorna true
+      LOG_INFO("NODE FOUND IN LOCAL DATABASE (SRC) ---- %s\n", removed_motes_sr[i]);
       return true;
     } 
   }
-  //se não encontrar o nodeid, retorna false
+  //se não encontrar o nodeip, retorna false
   LOG_INFO("NODE NOT FOUND IN LOCAL DATABASE (SRC)\n");
   return false;
 }
@@ -283,143 +226,85 @@ uip_sr_node_t *
 uip_sr_update_node(void *graph, const uip_ipaddr_t *child, const uip_ipaddr_t *parent, uint32_t lifetime)
 {
   //nó entrou no processo de adicionar rota
-  LOG_INFO("NODE DETECTED (SRC)");
+  LOG_INFO("MOTE DETECTED (SRC)");
   LOG_INFO_("\n");
-  //variavel para verificar se o nó a ligar à rede é de confiança ou não
-  int flag = 0;
-  //string a enviar
-  char buf[23];
-  //nodeid a comparar
-  char nodeid[6];
- //guardar último grupo hexadecimal (nodeID) para verificar se o nó já está registado
-  sprintf(nodeid,"%02x%02x", ((uint8_t *)child)[14], ((uint8_t *)child)[15]);
+  //nodeip a comparar
+  char nodeip[30];
+  sprintf(nodeip,"%02x%02x::%02x%02x:%02x%02x:%02x%02x:%02x%02x", ((uint8_t *)child)[0], ((uint8_t *)child)[1], ((uint8_t *)child)[8], ((uint8_t *)child)[9], ((uint8_t *)child)[10], ((uint8_t *)child)[11],((uint8_t *)child)[12], ((uint8_t *)child)[13], ((uint8_t *)child)[14], ((uint8_t *)child)[15]);
   //nó entrou no processo de adicionar vizinho
   //verificar se o nó já está conectado/aprovado
-  if ( is_node_approved_sr(nodeid) == false){
-    if(flag == 0 ){
-      if(NETSTACK_ROUTING.node_is_reachable()) {
-        if(stimer_expired(&timer_stimer)){
-          //converter endereço ipv6 para string
-          stringify_IPv6(child, buf);
-          /* Send to DAG root */
-          LOG_INFO("Sending address %s to ", buf);
-          LOG_INFO_6ADDR(&server_ipaddr);
-          LOG_INFO_("\n");
-          /* Set the number of transmissions to use for this packet -
-          this can be used to create more reliable transmissions or
-          less reliable than the default. Works end-to-end if
-          UIP_CONF_TAG_TC_WITH_VARIABLE_RETRANSMISSIONS is set to 1.
-          */
-          uipbuf_set_attr(UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS, 2);
-          //envia endereço do nó que quer registar na DAG para a vitabox
-          simple_udp_sendto(&udp_conn, &buf, sizeof(buf)+1, &server_ipaddr);
-          stimer_set(&timer_stimer, 10);
-        }
-      } else {
-        //não chega ao nó
-        LOG_INFO("---- Not reachable yet");
-        LOG_INFO_("\n");
-      }
-      //se concatenação de strings de modo a garantir o processo de registo certo
-      char flag1[40];
-      sprintf(flag1,"flag1:%s", nodeid);
-      char flag2[40];
-      sprintf(flag2,"flag2:%s", nodeid);
-       //se recebe flag1 regista (nó válido)
-      if(strcmp(message,flag1) == 0){
-        //atualiza flag
-        flag = 1;
-        LOG_INFO("NODE APPROVED IN REMOTE DATABASE (SR)");
-        LOG_INFO_("\n");
-        //adiciona o nodeid ao array local, de modo a registar o nó
-        strcpy(approved_nbr[cont], nodeid);
-        //incrementa posição no array
-        cont++;
-      }
-      //se recebe flag2 nao regista (nó inválido)
-      if (strcmp(message,flag2) == 0){
-        //atualiza flag
-        flag = 2;
-        LOG_INFO("NODE DENIED IN REMOTE DATABASE (SR)");
-        LOG_INFO_("\n");
-      }
-    }
-  }
-  //se o nó está na BD local do BR, adiciona rota para o vizinho
-  if(is_node_approved_sr(nodeid) == true){
-  uip_sr_node_t *child_node = uip_sr_get_node(graph, child);
-  uip_sr_node_t *parent_node = uip_sr_get_node(graph, parent);
-  uip_sr_node_t *old_parent_node;
-
-  if(parent != NULL) {
-    /* No node for the parent, add one with infinite lifetime */
-    if(parent_node == NULL) {
-      parent_node = uip_sr_update_node_parent(graph, parent, NULL, UIP_SR_INFINITE_LIFETIME);
-      if(parent_node == NULL) {
-        LOG_ERR("NS: no space left for root node!\n");
-        return NULL;
-      }
-    }
-  }
-
-  /* No node for this child, add one */
-  if(child_node == NULL) {
-    child_node = memb_alloc(&nodememb);
-    /* No space left, abort */
-    if(child_node == NULL) {
-      LOG_ERR("NS: no space left for child ");
-      LOG_ERR_6ADDR(child);
-      LOG_ERR_("\n");
-      return NULL;
-    }
-    child_node->parent = NULL;
-    list_add(nodelist, child_node);
-    num_nodes++;
-  }
-
-  /* Initialize node */
-  child_node->graph = graph;
-  child_node->lifetime = lifetime;
-  memcpy(child_node->link_identifier, ((const unsigned char *)child) + 8, 8);
-
-  /* Is the node reachable before the update? */
-  if(uip_sr_is_addr_reachable(graph, child)) {
-    old_parent_node = child_node->parent;
-    /* Update node */
-    child_node->parent = parent_node;
-    /* Has the node become unreachable? May happen if we create a loop. */
-    if(!uip_sr_is_addr_reachable(graph, child)) {
-      /* The new parent makes the node unreachable, restore old parent.
-       * We will take the update next time, with chances we know more of
-       * the topology and the loop is gone. */
-      child_node->parent = old_parent_node;
-    }
-  } else {
-    child_node->parent = parent_node;
-  }
-
-  LOG_INFO("NS: updating link, child ");
-  LOG_INFO_6ADDR(child);
-  LOG_INFO_(", parent ");
-  LOG_INFO_6ADDR(parent);
-  LOG_INFO_(", lifetime %u, num_nodes %u\n", (unsigned)lifetime, num_nodes);
-
-  return child_node;
-   }else{
+  if ( is_node_removed_motes_sr(nodeip) == true){
     //em caso de erro, não faz nada
     LOG_INFO(" Invalid Route");
     LOG_INFO_("\n");
     return NULL;
   }
-}
-/*---------------------------------------------------------------------------*/
-void
-uip_sr_init(void)
-{
-  set_global_address();
-  num_nodes = 0;
-  memb_init(&nodememb);
-  list_init(nodelist);
+  //se o nó está na BD local do BR, adiciona rota para o vizinho
+  if(is_node_removed_motes_sr(nodeip) == false){
+    uip_sr_node_t *child_node = uip_sr_get_node(graph, child);
+    uip_sr_node_t *parent_node = uip_sr_get_node(graph, parent);
+    uip_sr_node_t *old_parent_node;
+
+    if(parent != NULL) {
+      /* No node for the parent, add one with infinite lifetime */
+      if(parent_node == NULL) {
+        parent_node = uip_sr_update_node_parent(graph, parent, NULL, UIP_SR_INFINITE_LIFETIME);
+        if(parent_node == NULL) {
+          LOG_ERR("NS: no space left for root node!\n");
+          return NULL;
+        }
+      }
+    }
+
+    /* No node for this child, add one */
+    if(child_node == NULL) {
+      child_node = memb_alloc(&nodememb);
+      /* No space left, abort */
+      if(child_node == NULL) {
+        LOG_ERR("NS: no space left for child ");
+        LOG_ERR_6ADDR(child);
+        LOG_ERR_("\n");
+        return NULL;
+      }
+      child_node->parent = NULL;
+      list_add(nodelist, child_node);
+      num_nodes++;
+    }
+
+    /* Initialize node */
+    child_node->graph = graph;
+    child_node->lifetime = lifetime;
+    memcpy(child_node->link_identifier, ((const unsigned char *)child) + 8, 8);
+
+    /* Is the node reachable before the update? */
+    if(uip_sr_is_addr_reachable(graph, child)) {
+      old_parent_node = child_node->parent;
+      /* Update node */
+      child_node->parent = parent_node;
+      /* Has the node become unreachable? May happen if we create a loop. */
+      if(!uip_sr_is_addr_reachable(graph, child)) {
+        /* The new parent makes the node unreachable, restore old parent.
+        * We will take the update next time, with chances we know more of
+        * the topology and the loop is gone. */
+        child_node->parent = old_parent_node;
+      }
+    } else {
+      child_node->parent = parent_node;
+    }
+
+    LOG_INFO("NS: updating link, child ");
+    LOG_INFO_6ADDR(child);
+    LOG_INFO_(", parent ");
+    LOG_INFO_6ADDR(parent);
+    LOG_INFO_(", lifetime %u, num_nodes %u\n", (unsigned)lifetime, num_nodes);
+    return child_node;
+
+    } else {
+    //em caso de erro, não faz nada
+    LOG_INFO(" Invalid Route");
+    LOG_INFO_("\n");
+    return NULL;
+  }
 }
 /*---------------------------------------------------------------------------*/
 uip_sr_node_t *
@@ -533,3 +418,161 @@ uip_sr_link_snprint(char *buf, int buflen, uip_sr_node_t *link)
   return index;
 }
 /** @} */
+/*---------------------------------------------------------------------------*/
+int
+ipaddrconv_sr(const char *addrstr, uip_ip6addr_t *ipaddr)
+{
+  uint16_t value;
+  int tmp, zero;
+  unsigned int len;
+  char c = 0;  //gcc warning if not initialized
+
+  value = 0;
+  zero = -1;
+  if(*addrstr == '[') addrstr++;
+
+  for(len = 0; len < sizeof(uip_ip6addr_t) - 1; addrstr++) {
+    c = *addrstr;
+    if(c == ':' || c == '\0' || c == ']' || c == '/') {
+      ipaddr->u8[len] = (value >> 8) & 0xff;
+      ipaddr->u8[len + 1] = value & 0xff;
+      len += 2;
+      value = 0;
+
+      if(c == '\0' || c == ']' || c == '/') {
+        break;
+      }
+
+      if(*(addrstr + 1) == ':') {
+        /* Zero compression */
+        if(zero < 0) {
+          zero = len;
+        }
+        addrstr++;
+      }
+    } else {
+      if(c >= '0' && c <= '9') {
+        tmp = c - '0';
+      } else if(c >= 'a' && c <= 'f') {
+        tmp = c - 'a' + 10;
+      } else if(c >= 'A' && c <= 'F') {
+        tmp = c - 'A' + 10;
+      } else {
+        LOG_ERR("illegal char: '%c'\n", c);
+        return 0;
+      }
+      value = (value << 4) + (tmp & 0xf);
+    }
+  }
+  if(c != '\0' && c != ']' && c != '/') {
+    LOG_ERR("too large address\n");
+    return 0;
+  }
+  if(len < sizeof(uip_ip6addr_t)) {
+    if(zero < 0) {
+      LOG_ERR("too short address\n");
+      return 0;
+    }
+    memmove(&ipaddr->u8[zero + sizeof(uip_ip6addr_t) - len],
+            &ipaddr->u8[zero], len - zero);
+    memset(&ipaddr->u8[zero], 0, sizeof(uip_ip6addr_t) - len);
+  }
+
+  return 1;
+}
+/*---------------------------------------------------------------------------*/
+static void
+udp_rx_callback(struct simple_udp_connection *c,
+         const uip_ipaddr_t *sender_addr,
+         uint16_t sender_port,
+         const uip_ipaddr_t *receiver_addr,
+         uint16_t receiver_port,
+         const uint8_t *data,
+         uint16_t datalen)
+{
+ //guardar mensagem vinda da vitabox
+  message_sr = (char *)data;
+  LOG_INFO("Received response '%s' from ", message_sr);
+  LOG_INFO_6ADDR(sender_addr);
+  LOG_INFO_("\n");
+  char moteAddr[30];
+  int cont = 0;
+  while ( cont < strlen(message_sr)) {
+    moteAddr[cont] = message_sr[7+cont-1];
+    cont++;
+  }
+  moteAddr[cont] = '\0';
+  //se concatenação de strings de modo a garantir o processo de registo certo
+  char flag1[40];
+  sprintf(flag1,"remove:%s", moteAddr);
+  char flag2[40];
+  sprintf(flag2,"add:%s", moteAddr);
+  const uip_ipaddr_t *moteIP;
+  //se recebe flag1 remove mote da lista de vizinhos e rotas e adiciona à blacklist
+  if(strcmp(message_sr,flag1) == 0){
+    ipaddrconv_sr(moteAddr, (uip_ip6addr_t *)&moteIP);
+    static uip_sr_node_t *link;
+    LOG_INFO("Searching Routing Links - \n");
+    for(link = uip_sr_node_head(); link != NULL; link = uip_sr_node_next(link)) {
+      if(link->parent != NULL) {
+        uip_ipaddr_t child_ipaddr;
+        uip_ipaddr_t parent_ipaddr;
+        NETSTACK_ROUTING.get_sr_node_ipaddr(&child_ipaddr, link);
+        NETSTACK_ROUTING.get_sr_node_ipaddr(&parent_ipaddr, link->parent);
+        if(uip_ip6addr_cmp(&child_ipaddr, &moteIP)) {
+          LOG_INFO("FOUND - \n");
+          uip_debug_ipaddr_print(moteIP);
+          LOG_INFO(" MOTE IN STACK -> ");
+          uip_debug_ipaddr_print(&child_ipaddr);
+          LOG_INFO("\n");
+          uip_sr_expire_parent(NULL, &child_ipaddr, &parent_ipaddr);
+          LOG_INFO("MOTE REMOVED IN ROUTE TABLE (SR)");
+          LOG_INFO_("\n");
+        }
+      }
+    }
+    //adiciona o nodeip ao array local, de modo a bloquear o nó
+    for (int i = 0; i < 6; i ++){
+      //LOG_INFO("COMPARING NODE IN SR-- %s -- TO LOCAL DATABASE -- %s\n", addr, removed_motes_sr[i]);
+      if (strcmp(removed_motes_sr[i],NULL) == 0){
+        //se encontrar um campo vazio, adiciona à lista
+        strcpy(removed_motes_sr[i], moteAddr);
+        LOG_INFO("MOTE ADDED IN LOCAL DATABASE (SR) ---- %s\n", removed_motes_sr[i]);
+      } 
+    }
+    clock_delay(400);
+  }
+  //se recebe flag2 remove mote da blacklist
+  if (strcmp(message_sr,flag2) == 0){
+    for (int i = 0; i < 6; i ++){
+      //LOG_INFO("COMPARING NODE IN SR-- %s -- TO LOCAL DATABASE -- %s\n", addr, removed_motes_sr[i]);
+      if (strcmp(removed_motes_sr[i], moteAddr) == 0){
+         strcpy(removed_motes_sr[i], NULL);
+        //se encontrar o nodeip, remove da lista
+        LOG_INFO("MOTE REMOVED IN LOCAL DATABASE (SR) ---- %s\n", removed_motes_sr[i]);
+      } 
+    }
+    LOG_INFO("MOTE APPROVED IN SERVER MANAGER (SR)");
+    LOG_INFO_("\n");
+    clock_delay(400);
+  }
+}
+/*---------------------------------------------------------------------------*/
+static void
+set_global_address(void)
+{
+  /* Initialize UDP connection */
+  simple_udp_register(&udp_conn, UDP_CLIENT_PORT, NULL, UDP_SERVER_PORT, udp_rx_callback);
+  //definir endereço do servidor (vitabox)
+  uip_ip6addr(&server_ipaddr, 0xfd00, 0, 0, 0, 0, 0, 0, 1);
+}
+/*---------------------------------------------------------------------------*/
+void
+uip_sr_init(void)
+{
+  set_global_address();
+  num_nodes = 0;
+  memb_init(&nodememb);
+  list_init(nodelist);
+  LOG_INFO("STARTING SR\n");
+}

@@ -54,6 +54,17 @@
 #include "net/ipv6/uip-ds6-nbr.h"
 #include "net/ipv6/uip-nd6.h"
 #include "net/routing/routing.h"
+
+#include <stdbool.h>
+#include <stdio.h>
+#include <time.h>
+#include "sys/clock.h"
+#include "sys/stimer.h"
+#include "contiki.h"
+#include "random.h"
+#include "net/netstack.h"
+#include "net/ipv6/simple-udp.h"
+#include "net/ipv6/uiplib.h"
 #include "dev/leds.h"
 
 /* Log configuration */
@@ -61,16 +72,39 @@
 #define LOG_MODULE "IPv6 Nbr"
 #define LOG_LEVEL LOG_LEVEL_INFO
 
+// Configuração Sender-Listener --> Vitabox
+#define WITH_SERVER_REPLY  0
+#define UDP_CLIENT_PORT 8000
+#define UDP_SERVER_PORT 10001
+//estrutura para conexão UDP
+static struct simple_udp_connection udp_conn_nbr;
+//endereço do servidor (vitabox)
+uip_ipaddr_t server_ipaddr;
+static char *message_nbr;
+//array de nós registados na BD local do BR (variável partilhada entre ficheiros) max 10 vizinhos
+char removed_motes_nbr[6][40];
+//contador para incrementar posição no array
+int cont_nbr=0;
+//moteIP a comparar ao adicionar vizinho
+char nodeip[40];
+
 NBR_TABLE_GLOBAL(uip_ds6_nbr_t, ds6_neighbors);
 
 /*---------------------------------------------------------------------------*/
-void
-uip_ds6_neighbors_init(void)
-{
-  leds_init();
-  leds_toggle(LEDS_RED);
-  link_stats_init();
-  nbr_table_register(ds6_neighbors, (nbr_table_callback *)uip_ds6_nbr_rm);
+//método para verificar se nó já foi aprovado no registo de vizinhos
+bool is_node_removed_motes_nbr(char *addr){
+  for (int i = 0; i < 6; i ++){
+    clock_delay(400);
+    LOG_INFO("COMPARING NODE IN NBR-- %s -- TO LOCAL DATABASE -- %s\n", addr, removed_motes_nbr[i]);
+    if (strcmp(removed_motes_nbr[i],addr) == 0){
+      //se encontrar o nodeid, retorna true
+      LOG_INFO("NODE FOUND IN LOCAL DATABASE (NBR) ---- %s\n", removed_motes_nbr[i]);
+      return true;
+    } 
+  }
+  //se não encontrar o nodeid, retorna false
+  LOG_INFO("NODE NOT FOUND IN LOCAL DATABASE (NBR)\n");
+  return false;
 }
 /*---------------------------------------------------------------------------*/
 uip_ds6_nbr_t *
@@ -79,7 +113,24 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
                 void *data)
 {
   leds_off(LEDS_ALL);
-  leds_toggle(LEDS_YELLOW);
+  leds_toggle(LEDS_BLUE);
+   //nó entrou no processo de adicionar vizinho
+  LOG_INFO("NODE DETECTED (NBR)");
+  LOG_INFO_("\n");
+  //guardar último grupo hexadecimal (nodeID) para verificar se o nó já está registado
+  sprintf(nodeip,"%02x%02x::%02x%02x:%02x%02x:%02x%02x:%02x%02x", ((uint8_t *)ipaddr)[0], ((uint8_t *)ipaddr)[1], ((uint8_t *)ipaddr)[8], ((uint8_t *)ipaddr)[9], ((uint8_t *)ipaddr)[10], ((uint8_t *)ipaddr)[11],((uint8_t *)ipaddr)[12], ((uint8_t *)ipaddr)[13], ((uint8_t *)ipaddr)[14], ((uint8_t *)ipaddr)[15]);
+  //nó entrou no processo de adicionar vizinho
+  LOG_INFO_("\n");
+  if ( is_node_removed_motes_nbr(nodeip) == true){
+    //em caso de erro, não faz nada
+    LOG_INFO(" Invalid Mote");
+    LOG_INFO_("\n");
+    return NULL;
+  }
+  //Registo do novo nó fica pendente até aprovação na vitabox
+  if(is_node_removed_motes_nbr(nodeip) == false){
+    LOG_INFO("Valid Mote");
+    LOG_INFO_("\n");
   uip_ds6_nbr_t *nbr = nbr_table_add_lladdr(ds6_neighbors, (linkaddr_t*)lladdr
                                             , reason, data);
   if(nbr) {
@@ -101,15 +152,12 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
     stimer_set(&nbr->sendns, 0);
     nbr->nscount = 0;
 #endif /* UIP_ND6_SEND_NS */
-    leds_off(LEDS_ALL);
-    leds_toggle(LEDS_BLUE);
     LOG_INFO("Adding neighbor with ip addr ");
     LOG_INFO_6ADDR(ipaddr);
     LOG_INFO_(" link addr ");
     LOG_INFO_LLADDR((linkaddr_t*)lladdr);
     LOG_INFO_(" state %u\n", state);
     NETSTACK_ROUTING.neighbor_state_changed(nbr);
-
     return nbr;
   } else {
     LOG_INFO("Add drop ip addr ");
@@ -117,6 +165,12 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
     LOG_INFO_(" link addr (%p) ", lladdr);
     LOG_INFO_LLADDR((linkaddr_t*)lladdr);
     LOG_INFO_(" state %u\n", state);
+    return NULL;
+  }
+   }else{
+    //em caso de erro, não faz nada
+    LOG_INFO(" Invalid Node");
+    LOG_INFO_("\n");
     return NULL;
   }
 }
@@ -398,4 +452,156 @@ uip_ds6_get_least_lifetime_neighbor(void)
 }
 #endif /* UIP_ND6_SEND_NS */
 /*---------------------------------------------------------------------------*/
-/** @} */
+/*---------------------------------------------------------------------------*/
+int
+ipaddrconv_nbr(const char *addrstr, uip_ip6addr_t *ipaddr)
+{
+  uint16_t value;
+  int tmp, zero;
+  unsigned int len;
+  char c = 0;  //gcc warning if not initialized
+
+  value = 0;
+  zero = -1;
+  if(*addrstr == '[') addrstr++;
+
+  for(len = 0; len < sizeof(uip_ip6addr_t) - 1; addrstr++) {
+    c = *addrstr;
+    if(c == ':' || c == '\0' || c == ']' || c == '/') {
+      ipaddr->u8[len] = (value >> 8) & 0xff;
+      ipaddr->u8[len + 1] = value & 0xff;
+      len += 2;
+      value = 0;
+
+      if(c == '\0' || c == ']' || c == '/') {
+        break;
+      }
+
+      if(*(addrstr + 1) == ':') {
+        /* Zero compression */
+        if(zero < 0) {
+          zero = len;
+        }
+        addrstr++;
+      }
+    } else {
+      if(c >= '0' && c <= '9') {
+        tmp = c - '0';
+      } else if(c >= 'a' && c <= 'f') {
+        tmp = c - 'a' + 10;
+      } else if(c >= 'A' && c <= 'F') {
+        tmp = c - 'A' + 10;
+      } else {
+        LOG_ERR("illegal char: '%c'\n", c);
+        return 0;
+      }
+      value = (value << 4) + (tmp & 0xf);
+    }
+  }
+  if(c != '\0' && c != ']' && c != '/') {
+    LOG_ERR("too large address\n");
+    return 0;
+  }
+  if(len < sizeof(uip_ip6addr_t)) {
+    if(zero < 0) {
+      LOG_ERR("too short address\n");
+      return 0;
+    }
+    memmove(&ipaddr->u8[zero + sizeof(uip_ip6addr_t) - len],
+            &ipaddr->u8[zero], len - zero);
+    memset(&ipaddr->u8[zero], 0, sizeof(uip_ip6addr_t) - len);
+  }
+
+  return 1;
+}
+/*---------------------------------------------------------------------------*/
+static void
+udp_rx_callback_nbr(struct simple_udp_connection *c,
+         const uip_ipaddr_t *sender_addr,
+         uint16_t sender_port,
+         const uip_ipaddr_t *receiver_addr,
+         uint16_t receiver_port,
+         const uint8_t *data,
+         uint16_t datalen)
+{
+  //guardar mensagem vinda da vitabox
+  message_nbr = (char *)data;
+  LOG_INFO("Received response '%s' from ", message_nbr);
+  LOG_INFO_6ADDR(sender_addr);
+  LOG_INFO_("\n");
+  char moteAddr[30];
+  int cont = 0;
+  while ( cont < strlen(message_nbr)) {
+    moteAddr[cont] = message_nbr[7+cont-1];
+    cont++;
+  }
+  moteAddr[cont] = '\0';
+  moteAddr[0] = 'F';
+  moteAddr[1] = 'E';
+  moteAddr[2] = '8';
+  moteAddr[3] = '0';
+  //se concatenação de strings de modo a garantir o processo de registo certo
+  char flag1[40];
+  sprintf(flag1,"remove:%s", moteAddr);
+  char flag2[40];
+  sprintf(flag2,"add:%s", moteAddr);
+  const uip_ipaddr_t *moteIP;
+  //se recebe flag1 remove mote da lista de vizinhos e rotas e adiciona à blacklist
+  if(strcmp(message_nbr,flag1) == 0){
+    leds_off(LEDS_ALL);
+    leds_toggle(LEDS_RED);
+    ipaddrconv_nbr(moteAddr, (uip_ip6addr_t *)&moteIP);
+    uip_ds6_nbr_t *nbr;
+    nbr = uip_ds6_nbr_lookup(moteIP);
+    uip_ds6_nbr_rm(nbr);
+    LOG_INFO("MOTE REMOVED IN NEIGHBOUR TABLE (NBR)");
+    LOG_INFO_("\n");
+    //adiciona o nodeid ao array local, de modo a bloquear o nó
+    for (int i = 0; i < 6; i ++){
+      //LOG_INFO("COMPARING NODE IN NBR-- %s -- TO LOCAL DATABASE -- %s\n", addr, removed_motes_nbr[i]);
+      if (strcmp(removed_motes_nbr[i],NULL) == 0){
+        //se encontrar um campo vazio, adiciona à lista
+        strcpy(removed_motes_nbr[i], moteAddr);
+        LOG_INFO("MOTE ADDED IN LOCAL DATABASE (NBR) ---- %s\n", removed_motes_nbr[i]);
+      } 
+    }
+    clock_delay(400);
+  }
+  //se recebe flag2 remove mote da blacklist
+  if (strcmp(message_nbr,flag2) == 0){
+    leds_off(LEDS_ALL);
+    leds_toggle(LEDS_GREEN);
+    for (int i = 0; i < 6; i ++){
+      //LOG_INFO("COMPARING NODE IN NBR-- %s -- TO LOCAL DATABASE -- %s\n", addr, removed_motes_nbr[i]);
+      if (strcmp(removed_motes_nbr[i], moteAddr) == 0){
+         strcpy(removed_motes_nbr[i], NULL);
+        //se encontrar o nodeid, remove da lista
+        LOG_INFO("MOTE REMOVED IN LOCAL DATABASE (NBR) ---- %s\n", removed_motes_nbr[i]);
+      } 
+    }
+    LOG_INFO("MOTE APPROVED IN SERVER MANAGER (NBR)");
+    LOG_INFO_("\n");
+    clock_delay(400);
+  }
+}
+/*---------------------------------------------------------------------------*/
+static void
+set_global_address(void)
+{
+  //definir endereço do servidor (vitabox)
+  uip_ip6addr(&server_ipaddr, 0xfd00, 0, 0, 0, 0, 0, 0, 1);
+  /* Initialize UDP connection */
+  simple_udp_register(&udp_conn_nbr, UDP_CLIENT_PORT, NULL, UDP_SERVER_PORT, udp_rx_callback_nbr);
+}
+
+/*---------------------------------------------------------------------------*/
+void
+uip_ds6_neighbors_init(void)
+{
+  leds_init();
+  leds_toggle(LEDS_BLUE);
+  set_global_address();
+  link_stats_init();
+  nbr_table_register(ds6_neighbors, (nbr_table_callback *)uip_ds6_nbr_rm);
+  LOG_INFO("STARTING DS6 NBR\n");
+}

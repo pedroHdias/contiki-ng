@@ -96,11 +96,11 @@ print_routing_link(void)
         uip_ipaddr_t parent_ipaddr;
         NETSTACK_ROUTING.get_sr_node_ipaddr(&child_ipaddr, link);
         NETSTACK_ROUTING.get_sr_node_ipaddr(&parent_ipaddr, link->parent);
-		    uip_debug_ipaddr_print(&child_ipaddr);
+        uip_debug_ipaddr_print(&child_ipaddr);
         LOG_INFO(" Parent -> ");
         uip_debug_ipaddr_print(&parent_ipaddr);
         LOG_INFO(") %us", (unsigned int)link->lifetime);
-        LOG_INFO("\n");
+        LOG_INFO("\n");        
       }
     }
     LOG_INFO("\n");
