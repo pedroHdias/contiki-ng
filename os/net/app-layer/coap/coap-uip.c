@@ -65,7 +65,7 @@
 /* Log configuration */
 #include "coap-log.h"
 #define LOG_MODULE "coap-uip"
-#define LOG_LEVEL  LOG_LEVEL_COAP
+#define LOG_LEVEL  LOG_LEVEL_DBG // LOG_LEVEL_COAP
 
 #ifdef WITH_DTLS
 #include "tinydtls.h"
@@ -551,8 +551,19 @@ get_psk_info(struct dtls_context_t *ctx,
       dtls_keystore->coap_get_psk_info((coap_endpoint_t *)session, &ks);
     }
     if(ks.identity == NULL || ks.identity_len == 0) {
-      LOG_DBG("no psk_identity found\n");
-      return 0;
+
+      /*
+       * This section should not be here, this is needed to initial conncetion with the BSServer.
+       * Create a flag to check if is bootstraped
+       */
+      if(ks.identity == NULL || ks.identity_len == 0) {
+        /* Identity requested */
+        ks.identity = (uint8_t *)COAP_DTLS_PSK_DEFAULT_IDENTITY;
+        ks.identity_len = strlen(COAP_DTLS_PSK_DEFAULT_IDENTITY);
+      }
+      //This section should be active
+      //LOG_DBG("no psk_identity found\n");
+      //return 0;
     }
 
     if(result_length < ks.identity_len) {
@@ -560,6 +571,9 @@ get_psk_info(struct dtls_context_t *ctx,
       return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
     }
     memcpy(result, ks.identity, ks.identity_len);
+    LOG_DBG("identCharBS : %s\n", result);
+    LOG_DBG("identBS : %s\n", ks.identity);
+
     LOG_DBG("psk_identity with %u bytes found\n", ks.identity_len);
     return ks.identity_len;
 
@@ -570,9 +584,31 @@ get_psk_info(struct dtls_context_t *ctx,
       /* we know that session is a coap endpoint */
       dtls_keystore->coap_get_psk_info((coap_endpoint_t *)session, &ks);
     }
+    
     if(ks.key == NULL || ks.key_len == 0) {
-      LOG_DBG("PSK for unknown id requested, exiting\n");
-      return dtls_alert_fatal_create(DTLS_ALERT_ILLEGAL_PARAMETER);
+
+      /*
+       * Again this section should not be here, this is needed to initial conncetion with the BSServer.
+       * Create a flag to check if is bootstraped
+       */
+      if(ks.key == NULL || ks.key_len == 0){
+          char MyBSKeyPUB1[16];
+
+          memcpy(MyBSKeyPUB1 , &MyBSKeyPUB, sizeof(MyBSKeyPUB));
+        
+          LOG_DBG("pkChar : %s\n", MyBSKeyPUB);
+          LOG_DBG("pk : %s\n", MyBSKeyPUB1);
+
+          ks.key = (uint8_t *)MyBSKeyPUB1;
+          ks.key_len = strlen(MyBSKeyPUB1);
+          //ks.key = (uint8_t *)COAP_DTLS_PSK_DEFAULT_KEY;
+          //ks.key_len = strlen(COAP_DTLS_PSK_DEFAULT_KEY);
+          //return 1;
+      }
+
+      //Again this section should be active
+      //LOG_DBG("PSK for unknown id requested, exiting\n");
+      //return dtls_alert_fatal_create(DTLS_ALERT_ILLEGAL_PARAMETER);
     }
 
     if(result_length < ks.key_len) {
@@ -580,6 +616,10 @@ get_psk_info(struct dtls_context_t *ctx,
       return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
     }
     memcpy(result, ks.key, ks.key_len);
+
+    LOG_DBG("pkCharBS : %s\n", ks.key);
+    LOG_DBG("pkBS : %s\n", result);
+
     LOG_DBG("psk with %u bytes found\n", ks.key_len);
     return ks.key_len;
 

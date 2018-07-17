@@ -38,7 +38,11 @@
 
 /* IEEE802154_CONF_PANID defines the default PAN ID for IEEE 802.15.4 networks */
 #ifndef IEEE802154_CONF_PANID
+<<<<<<< HEAD
 #define IEEE802154_CONF_PANID 0x0100
+=======
+#define IEEE802154_CONF_PANID 0x0021
+>>>>>>> pfECDH
 #endif /* IEEE802154_CONF_PANID */
 
 /* IEEE802154_CONF_DEFAULT_CHANNEL defines the default channel for IEEE 802.15.4

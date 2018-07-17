@@ -58,6 +58,17 @@
 #include <string.h>
 #include <inttypes.h>
 
+//PF - To set the BS key
+#include "coap-keystore.h"
+#include "coap-keystore-simple.h"
+
+#include "dev/ecc-algorithm.h"
+#include "dev/ecc-curve.h"
+#include "lib/random.h"
+#include "sys/rtimer.h"
+#include "sys/pt.h"
+
+
 #if UIP_CONF_IPV6_RPL
 #include "rpl.h"
 #endif /* UIP_CONF_IPV6_RPL */
@@ -70,7 +81,7 @@
 /* Log configuration */
 #include "coap-log.h"
 #define LOG_MODULE "lwm2m-rd"
-#define LOG_LEVEL  LOG_LEVEL_LWM2M
+#define LOG_LEVEL  LOG_LEVEL_DBG//LOG_LEVEL_LWM2M
 
 #ifndef LWM2M_DEFAULT_CLIENT_LIFETIME
 #define LWM2M_DEFAULT_CLIENT_LIFETIME 30 /* sec */
@@ -105,6 +116,23 @@ static coap_message_t request[1];      /* This way the message can be treated as
 #define DEREGISTER_SENT   11
 #define DEREGISTER_FAILED 12
 #define DEREGISTERED      13
+/*PF 
+* sdfds states do ECDH
+*/
+#define INIT_ECDH                  20
+#define SENDMESSAGE_ECDHX          21
+#define SENDMESSAGE_ECDHY          22
+#define VALIDATE_ECDH              23
+#define WAITRESPONSE_ECDH          24
+#define WAITCALCULUS_ECDH          25
+
+//PF - define to ECDHServer
+// #ifndef ECDH_SERVER_ADDRESS
+// #define ECDH_SERVER_ADDRESS "coap://[fd00::1]:5686"
+// #endif
+
+
+
 #if LWM2M_QUEUE_MODE_ENABLED
 #define QUEUE_MODE_AWAKE 14
 #define QUEUE_MODE_SEND_UPDATE 15
@@ -140,6 +168,232 @@ static uint16_t queue_mode_client_awake_time; /* The time to be awake */
 /* Callback for the client awake timer */
 static void queue_mode_awake_timer_callback(coap_timer_t *timer); 
 #endif
+
+//PF INIT ---------------------------------------------
+uint32_t brPubKeyX[6] ;	
+uint32_t brPubKeyY[6] ;	
+uint32_t MYPrivateKey[6];
+uint32_t MyPubKeyX[6] ;	
+uint32_t MyPubKeyY[6] ;	
+char MyBSKey[16];
+//Helpers INIT - Should be in a new helper file like keystore
+
+void
+printKey192(uint32_t *key)
+{
+	int i;
+	for (i=5; i>=0; i--){
+	//for (i=0; i<6; i++){
+		printf("%08X", (unsigned int)key[i]); //0x%02x
+	}
+	printf("\n");
+}
+
+void
+printKeyuint8(uint8_t *key)
+{
+	int i;
+	for (i=0; i<8; i++){
+		printf("%02X", (unsigned int)key[i]); //0x%02x
+	}
+	printf("\n");
+}
+void
+GetKeyuint8(char *key, uint8_t *Bskey)
+{
+	int j;
+	for (j=0; j<8; j++){
+		if(j == 0){
+			sprintf(key,"%02X",(unsigned int)Bskey[j]);
+		}else{
+			sprintf(key + strlen(key),"%02X",(unsigned int)Bskey[j]);
+		}
+	}
+	printf("%s\n",key);
+}
+
+// void
+// ParseStringToUInt32X(char *point ,uint32_t *brPubPoint)
+// {
+
+//   LOG_DBG("ECDH ParseStringToUInt32 \n");
+// 	int j,k;
+// 	char aux[8] ;
+// 	k=5;
+// 	for(j=0;j<48;j+=8){
+// 		strncpy(aux, &point[j] , 8);
+// 		brPubKeyX[k] = strtoul(aux,NULL,16);
+// 		k--;				
+// 	}
+// }
+
+// void
+// ParseStringToUInt32Y(char *point ,uint32_t *brPubPoint)
+// {
+
+//   LOG_DBG("ECDH ParseStringToUInt32 \n");
+// 	int j,k;
+// 	char aux[8] ;
+// 	k=5;
+// 	for(j=0;j<48;j+=8){
+// 		strncpy(aux, &point[j] , 8);
+// 		brPubKeyY[k] = strtoul(aux,NULL,16);
+// 		k--;				
+// 	}
+// }
+
+// void
+// getMyPubKeys(char *keys)
+// {
+// 	//Para concatenar as chaves publicas
+// 	int j;
+// 	for(j=5;j>=0;j--){
+// 		if(j == 5){
+// 			sprintf(keys,"%06X",(unsigned int)MyPubKeyX[j]);
+// 		}else{
+// 			sprintf(keys + strlen(keys),"%06X",(unsigned int)MyPubKeyX[j]);
+// 		}
+// 	}
+// 	sprintf(keys + strlen(keys),";");
+// 	for(j=5;j>=0;j--){
+// 		sprintf(keys + strlen(keys),"%06X",(unsigned int)MyPubKeyY[j]);
+// 	}
+// 	printf("%s\n",keys);
+// }
+
+// void
+// getMyPubKeyX(char *keyX)
+// {
+// 	//Para concatenar as chaves publicas
+// 	int j;
+// 	for(j=5;j>=0;j--){
+// 		if(j == 5){
+// 			sprintf(keyX,"%08X",(unsigned int)MyPubKeyX[j]);
+// 		}else{
+// 			sprintf(keyX + strlen(keyX),"%08X",(unsigned int)MyPubKeyX[j]);
+// 		}
+// 	}
+//   sprintf(keyX + strlen(keyX),";");
+// 	printf("%s\n",keyX);
+// }
+// void
+// getMyPubKeyY(char *keyY)
+// {
+// 	//Para concatenar as chaves publicas
+// 	int j;
+// 	for(j=5;j>=0;j--){
+// 		if(j == 5){
+// 			sprintf(keyY,"%08X",(unsigned int)MyPubKeyY[j]);
+// 		}else{
+// 			sprintf(keyY + strlen(keyY),"%08X",(unsigned int)MyPubKeyY[j]);
+// 		}
+// 	}
+//   sprintf(keyY + strlen(keyY),";");
+// 	printf("%s\n",keyY);
+// }
+//Helpers END
+
+static void
+ecc_set_random(uint32_t *secret)
+{
+  int i;
+  for(i = 0; i < 8; ++i) {
+    secret[i] = (uint32_t)random_rand() | (uint32_t)random_rand() << 16;
+  }
+}
+
+//Process to calculate ECDH
+PROCESS(genSharedKey_ecdh, "Generate ECDH");
+PROCESS_THREAD(genSharedKey_ecdh, ev, data)
+{
+  PROCESS_BEGIN();
+
+  LOG_DBG(" PROCESSO genSharedKey_ecdh \n");
+
+  pka_init();
+
+  static ecc_compare_state_t state = {
+    .process = &genSharedKey_ecdh,
+    .size    = 6,
+  };
+
+  memcpy(state.b, nist_p_192.n, sizeof(uint32_t) * 6);
+  static uint32_t secret_a[6];
+    // memcpy(secret_a, MYPrivateKey, sizeof(uint32_t) * 6);
+
+  //FORCAR CAHVE igual para testes depois tem de ser random
+  //static uint32_t secret_a[6] = { 0x62EDF96D, 0x269509CD, 0xF3CE3AEF, 0x23CF0515, 0x120147FD, 0x9DA32D80 };
+  do {
+    ecc_set_random(secret_a);
+    
+    memcpy(state.a, secret_a, sizeof(uint32_t) * 6);
+    PT_SPAWN(&(genSharedKey_ecdh.pt), &(state.pt), ecc_compare(&state));
+  } while(state.result != PKA_STATUS_A_LT_B);
+
+
+  static ecc_multiply_state_t side_a = {
+    .process    = &genSharedKey_ecdh,
+    .curve_info = &nist_p_192,
+  };
+  memcpy(side_a.point_in.x, nist_p_192.x, sizeof(uint32_t) * 6);
+  memcpy(side_a.point_in.y, nist_p_192.y, sizeof(uint32_t) * 6);
+  memcpy(side_a.secret, secret_a, sizeof(secret_a));
+
+
+  printf("secret_a ");
+  //printKey192(secret_a);  	
+
+  //Generates pub keys
+  PT_SPAWN(&(genSharedKey_ecdh.pt), &(side_a.pt), ecc_multiply(&side_a));
+
+  printf("Before Key Exchange - Chaves Publicas \n ");
+
+  // printf("side_a.point_out.x ");
+  // printKey192(side_a.point_out.x); 
+  // printf("side_a.point_out.y ");
+  // printKey192(side_a.point_out.y); 
+
+  // //define a pontos da chave publica para enviar
+  memcpy(MyPubKeyX, side_a.point_out.x, sizeof(uint32_t) * 6);
+  memcpy(MyPubKeyY, side_a.point_out.y, sizeof(uint32_t) * 6);
+
+  //Espera pela resposta do ecdhServer
+  PROCESS_WAIT_EVENT();
+
+	//uint32_t brX[6] = { 0xEB5824EF, 0x3DD4600F, 0xFD76F462, 0xB0CE4D6E, 0x851DEDA9, 0x11FA2B68 }; //side_a.point_out.x PUB Box	
+	//uint32_t brY[6] = { 0x76CF18CE, 0x6EAB50F3, 0xA55F7F4F, 0xC8534362, 0x2B7E6055, 0x1B2585D6 }; //side_a.point_out.y PUB Box
+
+  //Já quando as cahves estão trocadas
+  memcpy(side_a.point_in.x, brPubKeyX, sizeof(uint32_t) * 6);
+  memcpy(side_a.point_in.y, brPubKeyY, sizeof(uint32_t) * 6);
+
+  //Generates Shared Key
+  PT_SPAWN(&(genSharedKey_ecdh.pt), &(side_a.pt), ecc_multiply(&side_a));
+
+  printf("Shared Key  \n");
+  printKey192(side_a.point_out.x);  
+  printKey192(side_a.point_out.y);
+
+  uint8_t key[8];
+  //GRAVA A CHAVE SIMETRICA
+  memcpy(key , &side_a.point_out.x, sizeof(key));
+
+  //Key to Connect with BS server
+  GetKeyuint8(MyBSKey,key);
+
+
+  memcpy(MyBSKeyPUB , &MyBSKey, sizeof(MyBSKey));
+  //COAP_DTLS_PSK_DEFAULT_KEY = MyBSKey;
+
+  //Kicks it to BSserver
+  rd_state=DO_BOOTSTRAP;
+    
+  pka_disable();
+
+  PROCESS_END();
+}
+//PF END ------------------------------------
+
 
 static void check_periodic_observations();
 static void update_callback(coap_callback_request_state_t *callback_state);
@@ -208,7 +462,11 @@ lwm2m_rd_client_use_bootstrap_server(int use)
 {
   session_info.use_bootstrap = use != 0;
   if(session_info.use_bootstrap) {
-    rd_state = INIT;
+    //PF - Big Change here.
+    //When initiates the state starts in ECDH. This should be in another function with a #define like  REGISTER_WITH_LWM2M_BOOTSTRAP_SERVER
+    // Add something like useECDH to session_info
+    rd_state = INIT_ECDH;
+    //rd_state = INIT;
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -234,7 +492,11 @@ lwm2m_rd_client_use_registration_server(int use)
 {
   session_info.use_registration = use != 0;
   if(session_info.use_registration) {
-    rd_state = INIT;
+    //PF - As Before Big Change here.
+    //When initiates the state starts in ECDH. This should be in another function with a #define like  REGISTER_WITH_LWM2M_BOOTSTRAP_SERVER
+    // Add something like useECDH to session_info
+    rd_state = INIT_ECDH;
+    //rd_state = INIT;
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -274,7 +536,11 @@ lwm2m_rd_client_register_with_server(const coap_endpoint_t *server)
   session_info.has_registration_server_info = 1;
   session_info.registered = 0;
   if(session_info.use_registration) {
-    rd_state = INIT;
+    //PF - As Before Big Change here.
+    //When initiates the state starts in ECDH. This should be in another function with a #define like  REGISTER_WITH_LWM2M_BOOTSTRAP_SERVER
+    // Add something like useECDH to session_info
+    rd_state = INIT_ECDH;
+    //rd_state = INIT;
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -311,7 +577,11 @@ lwm2m_rd_client_register_with_bootstrap_server(const coap_endpoint_t *server)
   session_info.bootstrapped = 0;
   session_info.registered = 0;
   if(session_info.use_bootstrap) {
-    rd_state = INIT;
+    //PF - As Before Big Change here.
+    //When initiates the state starts in ECDH. This should be in another function with a #define like  REGISTER_WITH_LWM2M_BOOTSTRAP_SERVER
+    // Add something like useECDH to session_info
+    rd_state = INIT_ECDH;
+    //rd_state = INIT;
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -561,6 +831,277 @@ deregister_callback(coap_callback_request_state_t *callback_state)
     }
   }
 }
+
+//PF
+
+void
+ParseStringToUInt32X(char *point)
+{
+
+  //LOG_DBG("ECDH ParseStringToUInt32 \n");
+
+  LOG_DBG("ECDH ParseStringToUInt32 %s \n", point);
+	int j,k;
+	char aux[50] ;
+	k=5;
+	for(j=0;j<48;j+=8){
+		strncpy(aux, &point[j] , 8);
+
+    //LOG_DBG("ECDH ParseStringToUInt32 aux %s \n", aux);
+
+		brPubKeyX[k] = strtoul(aux,NULL,16);
+		k--;				
+	}
+    //printKey192(brPubKeyX);
+    //printKey192(brPubKeyY);
+}
+
+void
+ParseStringToUInt32Y(char *point)
+{
+
+  //LOG_DBG("ECDH ParseStringToUInt32 \n");
+
+  LOG_DBG("ECDH ParseStringToUInt32 %s \n", point);
+	int j,k;
+	char aux[50] ;
+	k=5;
+	for(j=0;j<48;j+=8){
+
+		strncpy(aux, &point[j] , 8);
+
+    //LOG_DBG("ECDH ParseStringToUInt32 aux %s \n", aux);
+
+		brPubKeyY[k] = strtoul(aux,NULL,16);
+		k--;		
+	}
+    //printKey192(brPubKeyX);
+    //printKey192(brPubKeyY);
+  
+}
+//PF
+
+
+//PF INIT CALLBACKS
+
+static void
+ECDHGetSetY_callback(coap_callback_request_state_t *callback_state)
+{
+  //const char *Xpoint = NULL;
+  const char *Ypoint = NULL;
+  size_t len = 0;
+
+  coap_request_state_t *state = &callback_state->state;
+  LOG_DBG("ECDH callback Response: %d, ", state->response != NULL);
+  if(state->status == COAP_REQUEST_STATUS_RESPONSE) {
+    
+    coap_message_t *request = state->response;
+
+    // if((len = coap_get_post_variable(request, "Xpoint", &Xpoint))) {
+    //   LOG_DBG("Xpoint %.*s\n", len, Xpoint);
+    // }
+
+    if((len = coap_get_post_variable(request, "Ypoint", &Ypoint))) {
+      LOG_DBG("Ypoint %.*s\n", len, Ypoint);
+    }
+
+    //uint32_t brX[6] = { 0xEB5824EF, 0x3DD4600F, 0xFD76F462, 0xB0CE4D6E, 0x851DEDA9, 0x11FA2B68 }; //side_a.point_out.x PUB Box	
+	  //uint32_t brY[6] = { 0x76CF18CE, 0x6EAB50F3, 0xA55F7F4F, 0xC8534362, 0x2B7E6055, 0x1B2585D6 }; //side_a.point_out.y PUB Box
+    //brPubKeyY[0] = 0x76CF18CE;
+    //brPubKeyY = Ypoint;
+
+        
+    char auxx[strlen(Ypoint)];
+    strcpy(auxx, Ypoint);
+    //LOG_DBG("ECDH auxx: %s, \n\n", auxx);
+    ParseStringToUInt32Y(auxx);
+
+    
+    rd_state = VALIDATE_ECDH;
+
+  }else if(state->status == COAP_REQUEST_STATUS_TIMEOUT) { 
+    LOG_DBG_("Server not responding! Retry?");
+    rd_state = VALIDATE_ECDH;
+  }
+}
+
+static void
+ECDHGetSetX_callback(coap_callback_request_state_t *callback_state)
+{
+  const char *Xpoint = NULL;
+  //const char *Ypoint = NULL;
+  size_t len = 0;
+
+  coap_request_state_t *state = &callback_state->state;
+  LOG_DBG("ECDH callback Response: %d, \n", state->response != NULL);
+  if(state->status == COAP_REQUEST_STATUS_RESPONSE) {
+    
+    coap_message_t *request = state->response;
+
+    if((len = coap_get_post_variable(request, "Xpoint", &Xpoint))) {
+      LOG_DBG("Xpoint %.*s\n", len, Xpoint);
+    }
+
+    // if((len = coap_get_post_variable(request, "Ypoint", &Ypoint))) {
+    //   LOG_DBG("Ypoint %.*s\n", len, Ypoint);
+    // }
+    //brPubKeyX[0] = 0x76CF18CE;
+    
+    char auxx[strlen(Xpoint)];
+    strcpy(auxx, Xpoint);
+    //LOG_DBG("ECDH auxx: %s, \n\n", auxx);
+    ParseStringToUInt32X(auxx);
+    //brPubKeyX = Xpoint;
+    
+    rd_state = VALIDATE_ECDH;
+
+  }else if(state->status == COAP_REQUEST_STATUS_TIMEOUT) { 
+    LOG_DBG_("Server not responding! Retry?");
+    rd_state = VALIDATE_ECDH;
+  }
+}
+
+//PF END CALLBACKS --------------------------------
+
+//PF
+
+#ifndef ECDH_SERVER_ADDRESS
+#define ECDH_SERVER_ADDRESS "coap://[fd00::1]:5686"
+#endif
+
+void
+getMyPubKeys(char *keys)
+{
+	//Para concatenar as chaves publicas
+	int j;
+	for(j=5;j>=0;j--){
+		if(j == 5){
+			sprintf(keys,"%06X",(unsigned int)MyPubKeyX[j]);
+		}else{
+			sprintf(keys + strlen(keys),"%06X",(unsigned int)MyPubKeyX[j]);
+		}
+	}
+	sprintf(keys + strlen(keys),";");
+	for(j=5;j>=0;j--){
+		sprintf(keys + strlen(keys),"%06X",(unsigned int)MyPubKeyY[j]);
+	}
+	printf("%s\n",keys);
+}
+
+void
+getMyPubKeyX(char *keyX)
+{
+	//Para concatenar as chaves publicas
+	int j;
+	for(j=5;j>=0;j--){
+		if(j == 5){
+			sprintf(keyX,"%08X",(unsigned int)MyPubKeyX[j]);
+		}else{
+			sprintf(keyX + strlen(keyX),"%08X",(unsigned int)MyPubKeyX[j]);
+		}
+	}
+  sprintf(keyX + strlen(keyX),";");
+	printf("%s\n",keyX);
+}
+void
+getMyPubKeyY(char *keyY)
+{
+	//Para concatenar as chaves publicas
+	int j;
+	for(j=5;j>=0;j--){
+		if(j == 5){
+			sprintf(keyY,"%08X",(unsigned int)MyPubKeyY[j]);
+		}else{
+			sprintf(keyY + strlen(keyY),"%08X",(unsigned int)MyPubKeyY[j]);
+		}
+	}
+  sprintf(keyY + strlen(keyY),";");
+	printf("%s\n",keyY);
+}
+
+//PF
+
+//PF States INIT --------------------------------
+
+static bool
+ECDHGetSetY()
+{
+  LOG_DBG(" INIT ECDHGetSetY \n");
+
+  coap_endpoint_t ECDHserver_ep;
+
+   if(coap_endpoint_parse(ECDH_SERVER_ADDRESS, strlen(ECDH_SERVER_ADDRESS), &ECDHserver_ep) != 0) 
+  {
+
+    coap_init_message(request, COAP_TYPE_CON, COAP_POST, 0);
+    coap_set_header_uri_path(request, "/ecdh/puby");
+
+    //Envia Chaves
+    //char Pubs[97]; 
+    //char PubX[64]; 
+    char PubY[64]; 
+    //getMyPubKeys(Pubs);
+    //getMyPubKeyX(PubX);
+    getMyPubKeyY(PubY);
+    //LOG_INFO("keys %s", msg);
+    //snprintf(request, sizeof(msg) - 1,"%s" , msg);
+    snprintf(query_data, sizeof(query_data) - 1, "?ep=%s", session_info.ep);
+
+    coap_set_payload(request, (uint8_t *)PubY, sizeof(PubY) - 1);
+  
+     coap_set_header_uri_query(request, query_data);
+     LOG_INFO("Send Pub Y - ECDH[");
+     LOG_INFO_COAP_EP(&ECDHserver_ep);
+     LOG_INFO_("] as '%s'\n", query_data);
+
+    if(coap_send_request(&rd_request_state, &ECDHserver_ep, request, ECDHGetSetY_callback)) {   
+        rd_state = WAITRESPONSE_ECDH;
+        return true;
+    }
+  }
+  return false;
+}
+
+static bool
+ECDHGetSetX()
+{
+  LOG_DBG(" INIT ECDHGetSetX \n");
+
+  coap_endpoint_t ECDHserver_ep;
+
+  if(coap_endpoint_parse(ECDH_SERVER_ADDRESS, strlen(ECDH_SERVER_ADDRESS), &ECDHserver_ep) != 0) 
+  {
+
+    coap_init_message(request, COAP_TYPE_CON, COAP_POST, 0);
+    coap_set_header_uri_path(request, "/ecdh/pubx");
+
+    //Envia Chaves
+    //char Pubs[97]; 
+    char PubX[64]; 
+    //char PubY[64]; 
+    //getMyPubKeys(Pubs);
+    getMyPubKeyX(PubX);
+   // getMyPubKeyY(PubY);
+    //LOG_INFO("keys %s", msg);
+    //snprintf(request, sizeof(msg) - 1,"%s" , msg);
+    snprintf(query_data, sizeof(query_data) - 1, "?ep=%s", session_info.ep);
+
+    coap_set_payload(request, (uint8_t *)PubX, sizeof(PubX) - 1);
+  
+     coap_set_header_uri_query(request, query_data);
+     LOG_INFO("Send Pub X - ECDH[");
+     LOG_INFO_COAP_EP(&ECDHserver_ep);
+     LOG_INFO_("] as '%s'\n", query_data);
+
+    if(coap_send_request(&rd_request_state, &ECDHserver_ep, request, ECDHGetSetX_callback)) {
+        rd_state = WAITRESPONSE_ECDH;;
+        return true;
+    }
+  }
+  return false;
+}
+//PF States END --------------------------------
+
 /*---------------------------------------------------------------------------*/
 /* CoAP timer callback */
 static void
@@ -584,6 +1125,89 @@ periodic_process(coap_timer_t *timer)
           (unsigned long)coap_timer_uptime());
 
   switch(rd_state) {
+    // PF INIT  NEW STATES ---------------------------------------------------
+    case INIT_ECDH:
+    //Inicia logo o processo
+    process_start(&genSharedKey_ecdh, NULL);
+    
+    LOG_DBG("RD Client started with endpoint '%s' and client lifetime %d\n", session_info.ep, session_info.lifetime);
+    rd_state = SENDMESSAGE_ECDHX;
+    break;
+  case SENDMESSAGE_ECDHX:
+
+    if(now > wait_until_network_check) {
+      /* check each 10 seconds before next check */
+      LOG_DBG("Checking for network SENDMESSAGE_ECDH... %lu\n",
+              (unsigned long)wait_until_network_check);
+      wait_until_network_check = now + 10000;
+      if(has_network_access()) {
+        /* Either do bootstrap then registration */
+        if(session_info.use_bootstrap) {
+          
+          if(ECDHGetSetX()){
+            rd_state = WAITRESPONSE_ECDH;
+          }
+          //Este tem de passar para algum lado!!
+          //rd_state = DO_BOOTSTRAP;
+        } else {
+          rd_state = DO_REGISTRATION;
+        }
+      }
+      /* Otherwise wait until for a network to join */
+    }
+    break;
+  case SENDMESSAGE_ECDHY:
+
+    if(now > wait_until_network_check) {
+      /* check each 10 seconds before next check */
+      LOG_DBG("Checking for network SENDMESSAGE_ECDH... %lu\n",
+              (unsigned long)wait_until_network_check);
+      wait_until_network_check = now + 10000;
+      if(has_network_access()) {
+        /* Either do bootstrap then registration */
+        if(session_info.use_bootstrap) {
+          
+          if(ECDHGetSetY()){
+            rd_state = WAITRESPONSE_ECDH;
+          }
+          //Este tem de passar para algum lado!!
+          //rd_state = DO_BOOTSTRAP;
+        } else {
+          rd_state = DO_REGISTRATION;
+        }
+      }
+      /* Otherwise wait until for a network to join */
+    }
+
+    break;
+  case VALIDATE_ECDH:
+
+    LOG_DBG("VALIDATE_ECDH \n");
+
+    printKey192(brPubKeyX);
+    printKey192(brPubKeyY);
+
+
+    if(brPubKeyX[0] == 0){
+      rd_state = SENDMESSAGE_ECDHX;
+    }else if (brPubKeyY[0] == 0){
+       rd_state = SENDMESSAGE_ECDHY;
+    }else{
+      //Contitua
+      process_post_synch(&genSharedKey_ecdh, PROCESS_EVENT_CONTINUE, NULL);
+      rd_state=WAITCALCULUS_ECDH;
+      //Agora sim, está tudo validado vais fazer o bootstrap;
+      //rd_state = DO_BOOTSTRAP;
+    }
+    break; 
+
+  case WAITCALCULUS_ECDH:
+  /* just wait until the the process kicks us to the next state... */
+     break;
+  case WAITRESPONSE_ECDH:
+    /* just wait until the callback kicks us to the next state... */
+    break; 
+    // PF END NEW STATES ---------------------------------------------------
   case INIT:
     LOG_DBG("RD Client started with endpoint '%s' and client lifetime %d\n", session_info.ep, session_info.lifetime);
     rd_state = WAIT_NETWORK;
@@ -606,13 +1230,25 @@ periodic_process(coap_timer_t *timer)
     }
     break;
   case DO_BOOTSTRAP:
+    LOG_INFO("DO_BOOTSTRAP \n");
     if(session_info.use_bootstrap && session_info.bootstrapped == 0) {
+      LOG_INFO("DO_BOOTSTRAP IF session_info.use_bootstrap && session_info.bootstrapped == 0 \n");
       if(update_bootstrap_server()) {
+          //PF - INIT 
+          //TO conenct to BS with DTLS
+        if(!coap_endpoint_is_connected(&session_info.bs_server_ep)) {
+          /* Not connected... wait a bit... and retry connection */
+          coap_endpoint_connect(&session_info.bs_server_ep);
+          LOG_DBG("Wait until connected BS... \n");
+          return;
+        }
+        LOG_INFO("DO_BOOTSTRAP update_bootstrap_server \n");       
+        // PF - END
         /* prepare request, TID is set by COAP_BLOCKING_REQUEST() */
         coap_init_message(request, COAP_TYPE_CON, COAP_POST, 0);
         coap_set_header_uri_path(request, "/bs");
 
-        snprintf(query_data, sizeof(query_data) - 1, "?ep=%s", session_info.ep);
+        snprintf(query_data, sizeof(query_data) - 1, "?ep=%s&sec=123", session_info.ep);
         coap_set_header_uri_query(request, query_data);
         LOG_INFO("Registering ID with bootstrap server [");
         LOG_INFO_COAP_EP(&session_info.bs_server_ep);
@@ -644,6 +1280,12 @@ periodic_process(coap_timer_t *timer)
 
       if(security != NULL) {
         /* get the server URI */
+
+        LOG_DBG("** server_uri_len \n");
+        LOG_DBG_COAP_STRING((const char *)security->server_uri,security->server_uri_len);
+        LOG_DBG_("\n");
+        LOG_DBG(" (len %d) \n", security->server_uri_len);
+
         if(security->server_uri_len > 0) {
           uint8_t secure = 0;
 
@@ -653,8 +1295,9 @@ periodic_process(coap_timer_t *timer)
           LOG_DBG_(" (len %d) \n", security->server_uri_len);
           /* TODO Should verify it is a URI */
           /* Check if secure */
-          secure = strncmp((const char *)security->server_uri,
-                           "coaps:", 6) == 0;
+          //PF - this way we can connect to BS with DTLS.
+          secure = 0;// strncmp((const char *)security->server_uri,
+                   //        "coaps:", 6) == 0;
 
           if(!coap_endpoint_parse((const char *)security->server_uri,
                                   security->server_uri_len,
@@ -689,6 +1332,10 @@ periodic_process(coap_timer_t *timer)
     }
     break;
   case DO_REGISTRATION:
+    // PF -Disconect do Bs server
+    coap_endpoint_disconnect(&session_info.bs_server_ep);
+
+
     if(!coap_endpoint_is_connected(&session_info.server_ep)) {
       /* Not connected... wait a bit... and retry connection */
       coap_endpoint_connect(&session_info.server_ep);

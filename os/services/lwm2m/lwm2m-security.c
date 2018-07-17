@@ -55,7 +55,7 @@
 /* Log configuration */
 #include "coap-log.h"
 #define LOG_MODULE "lwm2m-sec"
-#define LOG_LEVEL  LOG_LEVEL_LWM2M
+#define LOG_LEVEL  LOG_LEVEL_DBG //LOG_LEVEL_LWM2M
 
 #define MAX_COUNT LWM2M_SERVER_MAX_COUNT
 
@@ -177,6 +177,12 @@ lwm2m_callback(lwm2m_object_instance_t *object,
     /* Handle the writes */
     switch(ctx->resource_id) {
     case LWM2M_SECURITY_SERVER_URI_ID:
+      //PF - when we receive a message from BSserver, passes here 2 times. the 2n time it would re write the server url.
+      LOG_DBG("Set LWM2M_SECURITY_SERVER_URI_ID: %d\n", security->server_uri_len);
+      if(security->server_uri_len > 0 ){
+        break;
+      }
+
       LOG_DBG("Writing security URI value: len: %"PRId16"\n", ctx->inbuf->size);
       value = lwm2m_object_read_string(ctx, ctx->inbuf->buffer, ctx->inbuf->size, security->server_uri, LWM2M_SECURITY_URI_SIZE);
       /* This is string... */
